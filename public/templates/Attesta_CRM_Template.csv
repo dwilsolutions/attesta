@@ -1,0 +1,8 @@
+control_id,control_name,responsibility,provider_responsibility,customer_responsibility,notes
+AC-1,Policy and Procedures,Customer,,Organization authors and maintains access control policy,
+AC-2,Account Management,Customer,,Organization manages application accounts,
+AC-17,Remote Access,Shared,Provider supplies network controls,Customer enforces MFA and approved channels,
+CP-9,System Backup,Inherited,Provider backs up underlying platform,,Inherited from CSP
+IA-2,Identification and Authentication,Shared,Provider supplies identity platform,Customer configures enforcement,
+PE-3,Physical Access Control,Inherited,Provider datacenter physical security,,Inherited from CSP P-ATO
+SC-7,Boundary Protection,Shared,Provider platform boundary,Customer configures network rules,

@@ -1,0 +1,6 @@
+artifact_title,artifact_type,method,objective_ids,sharepoint_url,valid_from,valid_until,owner,notes
+Entra ID Access Review Export Q3,config_export,examine,ac-2_obj.j,https://sharepoint.example.com/evidence/entra-access-review-q3.xlsx,2026-07-01,2026-10-01,ISSO,Quarterly review
+Firewall Ruleset Export,config_export,examine,sc-7_obj.a,https://sharepoint.example.com/evidence/nsg-rules.json,2026-07-15,2026-08-15,SysAdmin,
+Audit Log Sample August,log_sample,test,au-2_obj.a;au-6_obj.a,https://sharepoint.example.com/evidence/audit-aug.log,2026-08-01,2026-08-31,SecurityTeam,30-day sample
+CM Baseline Screenshot,screenshot,examine,cm-2_obj.a-1,https://sharepoint.example.com/evidence/baseline.png,2026-07-20,2026-10-20,SysAdmin,
+Azure Gov P-ATO Package Reference,csp_package_ref,examine,cp-9_obj.a,https://servicetrust.microsoft.com/azuregov,2026-01-01,2027-01-01,ISSO,Inherited control evidence
