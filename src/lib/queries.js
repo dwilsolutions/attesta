@@ -101,3 +101,27 @@ export async function saveOnboarding(answers, plan) {
   _assessmentId = data; // route into the just-created assessment
   return data;
 }
+
+/* ---- stage 4: narrative proposals ---------------------------------- */
+export async function getProposals(controlId, systemName = "Krome") {
+  if (!hasSupabase) {
+    return [
+      { proposal_id: "m1", objective_id: `${controlId}_obj.a`, draft_text: "The organization identifies and selects account types via Entra ID, consistent with documented access-control policy.", rationale: "Source policy §3.1 lists account types.", confidence: "high", status: "proposed" },
+    ];
+  }
+  const assessment = await resolveAssessment(systemName);
+  if (!assessment) return [];
+  const { data, error } = await supabase.rpc("proposals_for_review", {
+    p_assessment: assessment, p_control: controlId,
+  });
+  if (error) { console.error("proposals_for_review", error); return []; }
+  return data;
+}
+
+export async function acceptProposal(proposalId, editor, finalText) {
+  if (!hasSupabase) { console.log("mock accept", proposalId); return; }
+  const { error } = await supabase.rpc("accept_proposal", {
+    p_proposal: proposalId, p_editor: editor, p_final_text: finalText,
+  });
+  if (error) { console.error("accept_proposal", error); throw error; }
+}
