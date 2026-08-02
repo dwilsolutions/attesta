@@ -6,42 +6,66 @@ import { supabase, hasSupabase } from "../lib/supabase";
 import { resolveAssessment } from "../lib/queries";
 import {
   PencilLine, UploadCloud, FileText, Check, Loader2, ChevronRight,
-  Sparkles, AlertCircle, Cloud, HardDrive,
+  Sparkles, AlertCircle, Cloud, HardDrive, X,
 } from "lucide-react";
 
-// Families → we draft control-by-control. For a first pass we walk a
-// representative set; the edge function handles one control per call.
+// We draft control-by-control. First pass walks a representative set;
+// the edge function handles one control per call.
 const SEED_CONTROLS = ["ac-2","ac-3","ac-6","au-2","au-6","cm-2","cm-6","ia-2","ia-5","sc-7","sc-13","si-2","si-4"];
 
 export default function Ingest() {
   const { sys } = useOutletContext();
   const nav = useNavigate();
-  const [file, setFile] = useState(null);
-  const [text, setText] = useState("");
-  const [docType, setDocType] = useState("ssp");
-  const [phase, setPhase] = useState("idle"); // idle|parsing|parsed|drafting|done|error
-  const [err, setErr] = useState("");
+  const [docs, setDocs] = useState([]);   // [{ name, docType, text, chars, status, error }]
+  const [phase, setPhase] = useState("idle"); // idle|drafting|done
   const [progress, setProgress] = useState({ done: 0, total: 0 });
 
-  async function onFile(f) {
-    if (!f) return;
-    setErr(""); setFile(f); setDocType(guessDocType(f.name)); setPhase("parsing");
-    try {
-      const t = await extractText(f);
-      setText(t);
-      setPhase("parsed");
-    } catch (e) {
-      setErr(String(e.message || e)); setPhase("error");
+  async function onFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    // seed rows immediately as "parsing"
+    const seeded = files.map((f) => ({
+      name: f.name, docType: guessDocType(f.name), text: "", chars: 0,
+      status: "parsing", error: "",
+    }));
+    setDocs((prev) => [...prev, ...seeded]);
+
+    // extract each in parallel-ish
+    for (let k = 0; k < files.length; k++) {
+      const f = files[k];
+      try {
+        const t = await extractText(f);
+        setDocs((prev) => prev.map((d) =>
+          d.name === f.name && d.status === "parsing"
+            ? { ...d, text: t, chars: t.length, status: "parsed" } : d));
+      } catch (e) {
+        setDocs((prev) => prev.map((d) =>
+          d.name === f.name && d.status === "parsing"
+            ? { ...d, status: "error", error: String(e.message || e) } : d));
+      }
     }
   }
 
+  function removeDoc(name) {
+    setDocs((prev) => prev.filter((d) => d.name !== name));
+  }
+
+  const parsed = docs.filter((d) => d.status === "parsed");
+  const anyParsing = docs.some((d) => d.status === "parsing");
+
   async function runDraft() {
     if (!hasSupabase) {
-      setErr("Connect Supabase to run AI drafting (mock mode can't call the edge function).");
-      setPhase("error"); return;
+      setDocs((prev) => prev.map((d) => ({ ...d, error: "Connect Supabase to run AI drafting." })));
+      return;
     }
+    if (!parsed.length) return;
     setPhase("drafting");
     const assessment = await resolveAssessment(sys.name);
+    // Combine all parsed docs into one corpus; the edge function slices per call.
+    const corpus = parsed
+      .map((d) => `### SOURCE: ${d.name} (${d.docType})\n${d.text}`)
+      .join("\n\n");
+
     setProgress({ done: 0, total: SEED_CONTROLS.length });
     for (let i = 0; i < SEED_CONTROLS.length; i++) {
       try {
@@ -49,10 +73,10 @@ export default function Ingest() {
           body: {
             assessment_id: assessment,
             control_id: SEED_CONTROLS[i],
-            extracted_text: text,
+            extracted_text: corpus,
           },
         });
-      } catch (e) { /* keep going; one control failing shouldn't halt all */ }
+      } catch (e) { /* keep going */ }
       setProgress({ done: i + 1, total: SEED_CONTROLS.length });
     }
     setPhase("done");
@@ -62,90 +86,106 @@ export default function Ingest() {
     <div>
       <Header />
       <div style={{ padding: "28px 44px", maxWidth: 860 }}>
-        {/* source options — upload live, connectors as "coming" */}
+        {/* source options */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 26 }}>
-          <SourceCard active Icon={HardDrive} title="Upload a file"
-            note=".docx · .pdf · .txt · .md" />
+          <SourceCard active Icon={HardDrive} title="Upload files" note=".docx · .pdf · .txt · .md" />
           <SourceCard Icon={Cloud} title="SharePoint" note="Connector — coming" dim />
           <SourceCard Icon={Cloud} title="Google Drive" note="Connector — coming" dim />
         </div>
 
-        {/* dropzone */}
-        {phase === "idle" || phase === "error" ? (
+        {/* dropzone — always available so you can add more */}
+        {phase === "idle" && (
           <label style={{ display: "block", border: `2px dashed ${C.line}`, borderRadius: 14,
-            padding: "48px 24px", textAlign: "center", cursor: "pointer", background: C.panel }}>
-            <input type="file" accept=".docx,.pdf,.txt,.md" style={{ display: "none" }}
-              onChange={(e) => onFile(e.target.files?.[0])} />
-            <UploadCloud size={34} style={{ color: C.seal, marginBottom: 12 }} />
-            <div style={{ fontSize: 16, fontWeight: 600 }}>Drop your SSP, policy, or procedure</div>
+            padding: docs.length ? "24px" : "48px 24px", textAlign: "center", cursor: "pointer",
+            background: C.panel, marginBottom: docs.length ? 18 : 0 }}>
+            <input type="file" accept=".docx,.pdf,.txt,.md" multiple style={{ display: "none" }}
+              onChange={(e) => onFiles(e.target.files)} />
+            <UploadCloud size={docs.length ? 26 : 34} style={{ color: C.seal, marginBottom: 10 }} />
+            <div style={{ fontSize: docs.length ? 14 : 16, fontWeight: 600 }}>
+              {docs.length ? "Add more files" : "Drop your SSP, policies, and procedures"}
+            </div>
             <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>
-              Text is extracted in your browser — the original file is never stored.
+              Select several at once. Text is extracted in your browser — originals are never stored.
             </div>
-            {err && (
-              <div style={{ marginTop: 14, fontSize: 13, color: "#B4402F", display: "flex",
-                alignItems: "center", justifyContent: "center", gap: 6 }}>
-                <AlertCircle size={15} /> {err}
-              </div>
-            )}
           </label>
-        ) : null}
+        )}
 
-        {/* parsing / parsed */}
-        {(phase === "parsing" || phase === "parsed" || phase === "drafting" || phase === "done") && (
+        {/* file list */}
+        {docs.length > 0 && (
           <div style={{ border: `1px solid ${C.line}`, borderRadius: 14, background: C.panel,
-            padding: "22px 24px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: C.sealSoft,
-                display: "grid", placeItems: "center" }}>
-                <FileText size={20} style={{ color: C.seal }} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14.5, fontWeight: 600 }}>{file?.name}</div>
-                <div style={{ fontSize: 12.5, color: C.muted, fontFamily: F.mono }}>
-                  {docType} · {text ? `${text.length.toLocaleString()} chars extracted` : "parsing…"}
+            overflow: "hidden", marginBottom: 18 }}>
+            {docs.map((d, i) => (
+              <div key={d.name + i} style={{ display: "flex", alignItems: "center", gap: 12,
+                padding: "14px 18px", borderBottom: i < docs.length - 1 ? `1px solid ${C.line}` : "none" }}>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: C.sealSoft,
+                  display: "grid", placeItems: "center", flexShrink: 0 }}>
+                  <FileText size={17} style={{ color: C.seal }} />
                 </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden",
+                    textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
+                  <div style={{ fontSize: 12, color: d.status === "error" ? "#B4402F" : C.muted,
+                    fontFamily: F.mono }}>
+                    {d.status === "parsing" && "extracting…"}
+                    {d.status === "parsed" && `${d.docType} · ${d.chars.toLocaleString()} chars`}
+                    {d.status === "error" && d.error}
+                  </div>
+                </div>
+                {d.status === "parsing" && <Loader2 size={18} className="spin" style={{ color: C.seal }} />}
+                {d.status === "parsed" && <Check size={18} style={{ color: C.seal }} />}
+                {d.status === "error" && <AlertCircle size={18} style={{ color: "#B4402F" }} />}
+                {phase === "idle" && (
+                  <button onClick={() => removeDoc(d.name)} style={{ background: "none", border: "none",
+                    cursor: "pointer", padding: 4, color: C.faint }}>
+                    <X size={16} />
+                  </button>
+                )}
               </div>
-              {phase === "parsing" && <Loader2 size={20} className="spin" style={{ color: C.seal }} />}
-              {(phase === "parsed" || phase === "done") && <Check size={20} style={{ color: C.seal }} />}
+            ))}
+          </div>
+        )}
+
+        {/* draft action */}
+        {phase === "idle" && parsed.length > 0 && (
+          <button onClick={runDraft} disabled={anyParsing}
+            style={{ width: "100%", background: anyParsing ? C.lockBg : C.seal,
+              color: anyParsing ? C.faint : "#fff", border: "none", padding: "15px", borderRadius: 10,
+              fontFamily: F.body, fontSize: 15, fontWeight: 600, cursor: anyParsing ? "default" : "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <Sparkles size={17} />
+            {anyParsing ? "Waiting for files to finish…"
+              : `Draft narratives from ${parsed.length} document${parsed.length > 1 ? "s" : ""}`}
+          </button>
+        )}
+
+        {/* drafting progress */}
+        {phase === "drafting" && (
+          <div style={{ border: `1px solid ${C.line}`, borderRadius: 14, background: C.panel, padding: "22px 24px" }}>
+            <div style={{ fontSize: 13.5, color: C.muted, marginBottom: 8, display: "flex",
+              alignItems: "center", gap: 8 }}>
+              <Loader2 size={15} className="spin" style={{ color: C.seal }} />
+              Drafting narratives — control {progress.done} of {progress.total}
             </div>
+            <div style={{ height: 6, background: C.lockBg, borderRadius: 3, overflow: "hidden" }}>
+              <div style={{ width: `${(progress.done / progress.total) * 100}%`, height: "100%",
+                background: C.seal, transition: "width .3s" }} />
+            </div>
+          </div>
+        )}
 
-            {phase === "parsed" && (
-              <button onClick={runDraft} style={{ width: "100%", background: C.seal, color: "#fff",
-                border: "none", padding: "14px", borderRadius: 10, fontFamily: F.body, fontSize: 15,
-                fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center",
-                justifyContent: "center", gap: 8 }}>
-                <Sparkles size={17} /> Draft narratives from this document
-              </button>
-            )}
-
-            {phase === "drafting" && (
-              <div>
-                <div style={{ fontSize: 13.5, color: C.muted, marginBottom: 8, display: "flex",
-                  alignItems: "center", gap: 8 }}>
-                  <Loader2 size={15} className="spin" style={{ color: C.seal }} />
-                  Drafting narratives — control {progress.done} of {progress.total}
-                </div>
-                <div style={{ height: 6, background: C.lockBg, borderRadius: 3, overflow: "hidden" }}>
-                  <div style={{ width: `${(progress.done / progress.total) * 100}%`, height: "100%",
-                    background: C.seal, transition: "width .3s" }} />
-                </div>
-              </div>
-            )}
-
-            {phase === "done" && (
-              <div>
-                <div style={{ fontSize: 14, color: C.seal, fontWeight: 600, marginBottom: 12,
-                  display: "flex", alignItems: "center", gap: 8 }}>
-                  <Check size={17} /> Drafts ready for {progress.total} controls
-                </div>
-                <button onClick={() => nav("/review")} style={{ width: "100%", background: C.seal,
-                  color: "#fff", border: "none", padding: "14px", borderRadius: 10, fontFamily: F.body,
-                  fontSize: 15, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center",
-                  justifyContent: "center", gap: 8 }}>
-                  Review the proposed narratives <ChevronRight size={17} />
-                </button>
-              </div>
-            )}
+        {/* done */}
+        {phase === "done" && (
+          <div style={{ border: `1px solid ${C.line}`, borderRadius: 14, background: C.panel, padding: "22px 24px" }}>
+            <div style={{ fontSize: 14, color: C.seal, fontWeight: 600, marginBottom: 12,
+              display: "flex", alignItems: "center", gap: 8 }}>
+              <Check size={17} /> Drafts ready for {progress.total} controls, from {parsed.length} document{parsed.length > 1 ? "s" : ""}
+            </div>
+            <button onClick={() => nav("/review")} style={{ width: "100%", background: C.seal,
+              color: "#fff", border: "none", padding: "14px", borderRadius: 10, fontFamily: F.body,
+              fontSize: 15, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center",
+              justifyContent: "center", gap: 8 }}>
+              Review the proposed narratives <ChevronRight size={17} />
+            </button>
           </div>
         )}
       </div>
