@@ -10,7 +10,7 @@ import {
 const STAGES = [
   { id: "onboard",   label: "Onboarding",           blurb: "Company profile → tailored plan", icon: Compass,       state: "done",   route: "/onboard" },
   { id: "plan",      label: "Plan of Action",        blurb: "Scoped control set",              icon: ClipboardList, state: "done" },
-  { id: "templates", label: "Templates",             blurb: "Pre-filled documents",            icon: FileStack,     state: "done" },
+  { id: "templates", label: "Templates",             blurb: "Download starting points",         icon: FileStack,     state: "active", route: "/templates" },
   { id: "fill",      label: "Complete Docs",         blurb: "Upload & draft narratives",        icon: PencilLine,    state: "active", route: "/complete-docs" },
   { id: "evidence",  label: "Evidence Collection",   blurb: "Agent gathers artifacts",         icon: ScanLine,      state: "done" },
   { id: "review",    label: "Review & Reconcile",    blurb: "Confirm claims are backed",       icon: ShieldCheck,   state: "active", route: "/review" },
@@ -35,7 +35,8 @@ export default function Shell() {
   const [sys, setSys] = useState(SYSTEMS[0]);
   const [open, setOpen] = useState(false);
   const done = STAGES.filter((s) => s.state === "done").length;
-  const activeId = loc.pathname.startsWith("/complete-docs") ? "fill" : "review";
+  const activeId = loc.pathname.startsWith("/complete-docs") ? "fill"
+    : loc.pathname.startsWith("/templates") ? "templates" : "review";
 
   return (
     <div style={{ fontFamily: F.body, color: C.ink, background: C.paper,

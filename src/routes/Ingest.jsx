@@ -6,31 +6,27 @@ import { supabase, hasSupabase } from "../lib/supabase";
 import { resolveAssessment } from "../lib/queries";
 import {
   PencilLine, UploadCloud, FileText, Check, Loader2, ChevronRight,
-  Sparkles, AlertCircle, Cloud, HardDrive, X,
+  Sparkles, AlertCircle, Cloud, HardDrive, X, ChevronDown, FileStack,
 } from "lucide-react";
+import TemplateList from "../components/TemplateList.jsx";
 
-// We draft control-by-control. First pass walks a representative set;
-// the edge function handles one control per call.
 const SEED_CONTROLS = ["ac-2","ac-3","ac-6","au-2","au-6","cm-2","cm-6","ia-2","ia-5","sc-7","sc-13","si-2","si-4"];
 
 export default function Ingest() {
   const { sys } = useOutletContext();
   const nav = useNavigate();
-  const [docs, setDocs] = useState([]);   // [{ name, docType, text, chars, status, error }]
-  const [phase, setPhase] = useState("idle"); // idle|drafting|done
+  const [docs, setDocs] = useState([]);
+  const [phase, setPhase] = useState("idle");
   const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [showTemplates, setShowTemplates] = useState(false);
 
   async function onFiles(fileList) {
     const files = Array.from(fileList || []);
     if (!files.length) return;
-    // seed rows immediately as "parsing"
     const seeded = files.map((f) => ({
-      name: f.name, docType: guessDocType(f.name), text: "", chars: 0,
-      status: "parsing", error: "",
+      name: f.name, docType: guessDocType(f.name), text: "", chars: 0, status: "parsing", error: "",
     }));
     setDocs((prev) => [...prev, ...seeded]);
-
-    // extract each in parallel-ish
     for (let k = 0; k < files.length; k++) {
       const f = files[k];
       try {
@@ -46,9 +42,7 @@ export default function Ingest() {
     }
   }
 
-  function removeDoc(name) {
-    setDocs((prev) => prev.filter((d) => d.name !== name));
-  }
+  function removeDoc(name) { setDocs((prev) => prev.filter((d) => d.name !== name)); }
 
   const parsed = docs.filter((d) => d.status === "parsed");
   const anyParsing = docs.some((d) => d.status === "parsing");
@@ -61,20 +55,12 @@ export default function Ingest() {
     if (!parsed.length) return;
     setPhase("drafting");
     const assessment = await resolveAssessment(sys.name);
-    // Combine all parsed docs into one corpus; the edge function slices per call.
-    const corpus = parsed
-      .map((d) => `### SOURCE: ${d.name} (${d.docType})\n${d.text}`)
-      .join("\n\n");
-
+    const corpus = parsed.map((d) => `### SOURCE: ${d.name} (${d.docType})\n${d.text}`).join("\n\n");
     setProgress({ done: 0, total: SEED_CONTROLS.length });
     for (let i = 0; i < SEED_CONTROLS.length; i++) {
       try {
         await supabase.functions.invoke("ingest-document", {
-          body: {
-            assessment_id: assessment,
-            control_id: SEED_CONTROLS[i],
-            extracted_text: corpus,
-          },
+          body: { assessment_id: assessment, control_id: SEED_CONTROLS[i], extracted_text: corpus },
         });
       } catch (e) { /* keep going */ }
       setProgress({ done: i + 1, total: SEED_CONTROLS.length });
@@ -86,14 +72,23 @@ export default function Ingest() {
     <div>
       <Header />
       <div style={{ padding: "28px 44px", maxWidth: 860 }}>
-        {/* source options */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 26 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 22 }}>
           <SourceCard active Icon={HardDrive} title="Upload files" note=".docx · .pdf · .txt · .md" />
           <SourceCard Icon={Cloud} title="SharePoint" note="Connector — coming" dim />
           <SourceCard Icon={Cloud} title="Google Drive" note="Connector — coming" dim />
         </div>
 
-        {/* dropzone — always available so you can add more */}
+        {/* need a starting point? */}
+        <div style={{ marginBottom: 18 }}>
+          <button onClick={() => setShowTemplates((v) => !v)}
+            style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none",
+              cursor: "pointer", fontFamily: F.body, fontSize: 13.5, color: C.seal, fontWeight: 600, padding: "4px 0" }}>
+            <FileStack size={16} /> Need a starting point? Download a template
+            <ChevronDown size={15} style={{ transform: showTemplates ? "rotate(180deg)" : "none", transition: ".15s" }} />
+          </button>
+          {showTemplates && <div style={{ marginTop: 14 }}><TemplateList compact /></div>}
+        </div>
+
         {phase === "idle" && (
           <label style={{ display: "block", border: `2px dashed ${C.line}`, borderRadius: 14,
             padding: docs.length ? "24px" : "48px 24px", textAlign: "center", cursor: "pointer",
@@ -110,7 +105,6 @@ export default function Ingest() {
           </label>
         )}
 
-        {/* file list */}
         {docs.length > 0 && (
           <div style={{ border: `1px solid ${C.line}`, borderRadius: 14, background: C.panel,
             overflow: "hidden", marginBottom: 18 }}>
@@ -124,8 +118,7 @@ export default function Ingest() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden",
                     textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
-                  <div style={{ fontSize: 12, color: d.status === "error" ? "#B4402F" : C.muted,
-                    fontFamily: F.mono }}>
+                  <div style={{ fontSize: 12, color: d.status === "error" ? "#B4402F" : C.muted, fontFamily: F.mono }}>
                     {d.status === "parsing" && "extracting…"}
                     {d.status === "parsed" && `${d.docType} · ${d.chars.toLocaleString()} chars`}
                     {d.status === "error" && d.error}
@@ -136,16 +129,13 @@ export default function Ingest() {
                 {d.status === "error" && <AlertCircle size={18} style={{ color: "#B4402F" }} />}
                 {phase === "idle" && (
                   <button onClick={() => removeDoc(d.name)} style={{ background: "none", border: "none",
-                    cursor: "pointer", padding: 4, color: C.faint }}>
-                    <X size={16} />
-                  </button>
+                    cursor: "pointer", padding: 4, color: C.faint }}><X size={16} /></button>
                 )}
               </div>
             ))}
           </div>
         )}
 
-        {/* draft action */}
         {phase === "idle" && parsed.length > 0 && (
           <button onClick={runDraft} disabled={anyParsing}
             style={{ width: "100%", background: anyParsing ? C.lockBg : C.seal,
@@ -158,11 +148,9 @@ export default function Ingest() {
           </button>
         )}
 
-        {/* drafting progress */}
         {phase === "drafting" && (
           <div style={{ border: `1px solid ${C.line}`, borderRadius: 14, background: C.panel, padding: "22px 24px" }}>
-            <div style={{ fontSize: 13.5, color: C.muted, marginBottom: 8, display: "flex",
-              alignItems: "center", gap: 8 }}>
+            <div style={{ fontSize: 13.5, color: C.muted, marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
               <Loader2 size={15} className="spin" style={{ color: C.seal }} />
               Drafting narratives — control {progress.done} of {progress.total}
             </div>
@@ -173,7 +161,6 @@ export default function Ingest() {
           </div>
         )}
 
-        {/* done */}
         {phase === "done" && (
           <div style={{ border: `1px solid ${C.line}`, borderRadius: 14, background: C.panel, padding: "22px 24px" }}>
             <div style={{ fontSize: 14, color: C.seal, fontWeight: 600, marginBottom: 12,
@@ -202,13 +189,11 @@ function Header() {
         <span>Krome</span><ChevronRight size={13} /><span>Stage 04</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 10, background: C.seal,
-          display: "grid", placeItems: "center" }}>
+        <div style={{ width: 40, height: 40, borderRadius: 10, background: C.seal, display: "grid", placeItems: "center" }}>
           <PencilLine size={21} color="#fff" />
         </div>
         <div>
-          <h1 style={{ fontFamily: F.display, fontSize: 30, fontWeight: 600, margin: 0,
-            letterSpacing: "-0.02em" }}>Complete Docs</h1>
+          <h1 style={{ fontFamily: F.display, fontSize: 30, fontWeight: 600, margin: 0, letterSpacing: "-0.02em" }}>Complete Docs</h1>
           <p style={{ margin: "3px 0 0", fontSize: 14, color: C.muted }}>
             Upload existing documentation — Attesta drafts a narrative per objective
           </p>
