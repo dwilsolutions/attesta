@@ -125,3 +125,39 @@ export async function acceptProposal(proposalId, editor, finalText) {
   });
   if (error) { console.error("accept_proposal", error); throw error; }
 }
+
+/* ---- stage 5: evidence ---------------------------------------------- */
+export async function reviewEvidence(controlId, { url, pasted_text, title }) {
+  if (!hasSupabase) {
+    return { ok: true, matches: [
+      { objective_id: `${controlId}_obj`, method: "examine",
+        supports: "Sample: the linked export shows the control enforced.", confidence: "high" },
+    ] };
+  }
+  const { data, error } = await supabase.functions.invoke("review-evidence", {
+    body: { control_id: controlId, url, pasted_text, title },
+  });
+  if (error) { console.error("review-evidence", error); return { ok: false, reason: String(error) }; }
+  return data;
+}
+
+export async function linkEvidence(objective, { assessment, title, url, artifactType, method, supports }, systemName = "Krome") {
+  if (!hasSupabase) { console.log("mock linkEvidence", objective); return; }
+  const a = assessment || await resolveAssessment(systemName);
+  const { error } = await supabase.rpc("link_evidence", {
+    p_assessment: a, p_objective: objective, p_title: title, p_url: url,
+    p_artifact_type: artifactType, p_method: method, p_supports: supports,
+  });
+  if (error) { console.error("link_evidence", error); throw error; }
+}
+
+export async function getEvidenceForControl(controlId, systemName = "Krome") {
+  if (!hasSupabase) return [];
+  const assessment = await resolveAssessment(systemName);
+  if (!assessment) return [];
+  const { data, error } = await supabase.rpc("evidence_for_control", {
+    p_assessment: assessment, p_control: controlId,
+  });
+  if (error) { console.error("evidence_for_control", error); return []; }
+  return data;
+}
