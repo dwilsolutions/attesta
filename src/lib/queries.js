@@ -127,15 +127,15 @@ export async function acceptProposal(proposalId, editor, finalText) {
 }
 
 /* ---- stage 5: evidence ---------------------------------------------- */
-export async function reviewEvidence(controlId, { url, pasted_text, title }) {
+export async function reviewEvidence(controlId, { urls, pasted_text, title }) {
   if (!hasSupabase) {
-    return { ok: true, matches: [
+    return { ok: true, files_read: (urls||[]).length, matches: [
       { objective_id: `${controlId}_obj`, method: "examine",
-        supports: "Sample: the linked export shows the control enforced.", confidence: "high" },
+        supports: "Sample: the linked evidence shows the control enforced.", confidence: "high" },
     ] };
   }
   const { data, error } = await supabase.functions.invoke("review-evidence", {
-    body: { control_id: controlId, url, pasted_text, title },
+    body: { control_id: controlId, urls, pasted_text, title },
   });
   if (error) { console.error("review-evidence", error); return { ok: false, reason: String(error) }; }
   return data;
