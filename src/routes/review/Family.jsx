@@ -131,6 +131,7 @@ function EvidencePanel({ control, sys, onLinked }) {
   const [artifactType, setArtifactType] = useState("config_export");
   const [phase, setPhase] = useState("idle"); // idle|reviewing|matches|needsPaste|linking|done
   const [matches, setMatches] = useState([]);
+  const [derived, setDerived] = useState({ title: "Evidence", artifactType: "config_export" });
   const [pasteText, setPasteText] = useState("");
   const [reason, setReason] = useState("");
 
@@ -140,10 +141,10 @@ function EvidencePanel({ control, sys, onLinked }) {
     const res = await reviewEvidence(control, {
       urls: usePaste ? undefined : urlList,
       pasted_text: usePaste ? pasteText : undefined,
-      title,
     });
     if (res.needs_paste) { setReason(res.reason || ""); setPhase("needsPaste"); return; }
     if (!res.ok) { setReason(res.reason || "Review failed."); setPhase("needsPaste"); return; }
+    setDerived({ title: res.title || "Evidence", artifactType: res.artifact_type || "config_export" });
     setMatches((res.matches || []).map((m) => ({ ...m, keep: true })));
     setPhase("matches");
   }
@@ -166,7 +167,7 @@ function EvidencePanel({ control, sys, onLinked }) {
   }
 
   function reset() {
-    setUrls(""); setTitle(""); setPasteText(""); setMatches([]); setReason("");
+    setUrls(""); setPasteText(""); setMatches([]); setReason("");
     setPhase("idle"); setOpen(false);
   }
 
@@ -191,14 +192,6 @@ function EvidencePanel({ control, sys, onLinked }) {
 
       {(phase === "idle" || phase === "reviewing") && (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Evidence title"
-              style={inputS} />
-            <select value={artifactType} onChange={(e) => setArtifactType(e.target.value)}
-              style={{ ...inputS, cursor: "pointer" }}>
-              {ARTIFACT_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </div>
           <textarea value={urls} onChange={(e) => setUrls(e.target.value)} rows={3}
             placeholder={"Paste one or more shared links — one per line\n(SharePoint / Drive / URL)"}
             style={{ ...inputS, marginBottom: 10, resize: "vertical", fontFamily: F.mono, fontSize: 12.5 }} />
@@ -229,6 +222,11 @@ function EvidencePanel({ control, sys, onLinked }) {
 
       {phase === "matches" && (
         <>
+          <div style={{ fontSize: 13, color: C.muted, marginBottom: 6 }}>
+            Detected: <strong style={{ color: C.ink }}>{derived.title}</strong>
+            <span style={{ fontFamily: F.mono, fontSize: 11, marginLeft: 8, color: C.seal }}>
+              {derived.artifactType.replace("_", " ")}</span>
+          </div>
           <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 10 }}>
             {matches.length ? `Attesta found ${matches.filter(m=>m.keep).length} objective${matches.length>1?"s":""} this supports:` : "No objectives matched this evidence."}
           </div>
