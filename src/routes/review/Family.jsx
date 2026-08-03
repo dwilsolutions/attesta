@@ -126,7 +126,7 @@ export default function Family() {
 /* ---------------- evidence panel (per control) ---------------- */
 function EvidencePanel({ control, sys, onLinked }) {
   const [open, setOpen] = useState(false);
-  const [url, setUrl] = useState("");
+  const [urls, setUrls] = useState("");
   const [title, setTitle] = useState("");
   const [artifactType, setArtifactType] = useState("config_export");
   const [phase, setPhase] = useState("idle"); // idle|reviewing|matches|needsPaste|linking|done
@@ -136,8 +136,9 @@ function EvidencePanel({ control, sys, onLinked }) {
 
   async function review(usePaste) {
     setPhase("reviewing"); setReason("");
+    const urlList = urls.split(/\s*\n\s*/).map((u) => u.trim()).filter(Boolean);
     const res = await reviewEvidence(control, {
-      url: usePaste ? undefined : url,
+      urls: usePaste ? undefined : urlList,
       pasted_text: usePaste ? pasteText : undefined,
       title,
     });
@@ -150,10 +151,12 @@ function EvidencePanel({ control, sys, onLinked }) {
   async function confirm() {
     setPhase("linking");
     const assessment = await resolveAssessment(sys.name);
+    const urlList = urls.split(/\s*\n\s*/).map((u) => u.trim()).filter(Boolean);
+    const primaryUrl = urlList[0] || "";
     for (const m of matches.filter((x) => x.keep)) {
       try {
         await linkEvidence(m.objective_id, {
-          assessment, title: title || "Evidence", url, artifactType,
+          assessment, title: title || "Evidence", url: primaryUrl, artifactType,
           method: m.method, supports: m.supports,
         }, sys.name);
       } catch (e) { /* continue */ }
@@ -163,7 +166,7 @@ function EvidencePanel({ control, sys, onLinked }) {
   }
 
   function reset() {
-    setUrl(""); setTitle(""); setPasteText(""); setMatches([]); setReason("");
+    setUrls(""); setTitle(""); setPasteText(""); setMatches([]); setReason("");
     setPhase("idle"); setOpen(false);
   }
 
@@ -196,13 +199,14 @@ function EvidencePanel({ control, sys, onLinked }) {
               {ARTIFACT_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </div>
-          <input value={url} onChange={(e) => setUrl(e.target.value)}
-            placeholder="Paste a shared link (SharePoint / Drive / URL)" style={{ ...inputS, marginBottom: 12 }} />
+          <textarea value={urls} onChange={(e) => setUrls(e.target.value)} rows={3}
+            placeholder={"Paste one or more shared links — one per line\n(SharePoint / Drive / URL)"}
+            style={{ ...inputS, marginBottom: 10, resize: "vertical", fontFamily: F.mono, fontSize: 12.5 }} />
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
-            <Cloud size={13} /> Attesta reviews the evidence in place — the file is never stored.
+            <Cloud size={13} /> Multiple files review together. Attesta reads them in place — files are never stored.
           </div>
-          <button onClick={() => review(false)} disabled={!url || phase === "reviewing"}
-            style={{ ...btnS(!!url && phase !== "reviewing") }}>
+          <button onClick={() => review(false)} disabled={!urls.trim() || phase === "reviewing"}
+            style={{ ...btnS(!!urls.trim() && phase !== "reviewing") }}>
             {phase === "reviewing"
               ? <><Loader2 size={15} className="spin" /> Reviewing evidence…</>
               : <><Sparkles size={15} /> Review & match to objectives</>}
