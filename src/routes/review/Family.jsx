@@ -5,11 +5,12 @@ import {
   getControlsInFamily, getObjectivesForControl, getProposals, acceptProposal,
   reviewEvidence, linkEvidence, getEvidenceForControl, resolveAssessment, getLinkedUrls,
   unlinkEvidence, editNarrative, removeNarrative, getNarratives,
+  getGoverningDocs, editGoverningSection, setGoverningStatus,
 } from "../../lib/queries";
 import {
   ChevronLeft, CircleCheck, CircleDashed, CircleAlert, FileText, Paperclip,
   Sparkles, Check, X, Pencil, Loader2, Link2, Plus, ExternalLink, Cloud,
-  Image as ImageIcon, Eye, Trash2, Save,
+  Image as ImageIcon, Eye, Trash2, Save, FileStack, ChevronDown, BadgeCheck,
 } from "lucide-react";
 
 const COVER = {
@@ -34,6 +35,7 @@ export default function Family() {
   const [proposals, setProposals] = useState({});
   const [evidence, setEvidence] = useState({}); // objective_id -> [artifacts]
   const [narratives, setNarratives] = useState({}); // objective_id -> approved text
+  const [govDocs, setGovDocs] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -47,11 +49,13 @@ export default function Family() {
 
   const loadControl = useCallback(async () => {
     if (!openControl) { setObjs([]); setProposals({}); setEvidence({}); return; }
-    const [o, props, ev, narrs] = await Promise.all([
+    const isDashOne = /-1$/.test(openControl);
+    const [o, props, ev, narrs, gdocs] = await Promise.all([
       getObjectivesForControl(openControl, sys.name),
       getProposals(openControl, sys.name),
       getEvidenceForControl(openControl, sys.name),
       getNarratives(openControl, sys.name),
+      isDashOne ? getGoverningDocs(family, sys.name) : Promise.resolve([]),
     ]);
     setObjs(o);
     const byObj = {}; (props || []).forEach((p) => { byObj[p.objective_id] = p; });
@@ -60,6 +64,7 @@ export default function Family() {
     (ev || []).forEach((e) => { (evByObj[e.objective_id] ||= []).push(e); });
     setEvidence(evByObj);
     setNarratives(narrs || {});
+    setGovDocs(gdocs || []);
   }, [openControl, sys.name]);
 
   useEffect(() => { loadControl(); }, [loadControl]);
@@ -108,6 +113,10 @@ export default function Family() {
         <div style={{ padding: "24px 40px", maxWidth: 820 }}>
           {openControl && (
             <EvidencePanel control={openControl} sys={sys} onLinked={loadControl} />
+          )}
+
+          {/-1$/.test(openControl) && (
+            <GoverningDocs docs={govDocs} reload={loadControl} />
           )}
 
           <div style={{ fontSize: 12, fontFamily: F.mono, color: C.faint, margin: "26px 0 6px",
@@ -514,5 +523,112 @@ function Chip({ on, Icon, onLabel, offLabel, warn }) {
       color: col, background: bg, padding: "5px 10px", borderRadius: 7 }}>
       <Icon size={13} /> {on ? onLabel : offLabel}
     </span>
+  );
+}
+
+/* ---------------- governing documents (policy/procedure at -1 controls) ------- */
+function GoverningDocs({ docs, reload }) {
+  if (!docs || docs.length === 0) {
+    return (
+      <div style={{ marginTop: 22, border: `1px dashed ${C.line}`, borderRadius: 12,
+        padding: "18px 20px", background: C.panel }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: C.muted }}>
+          <FileStack size={16} style={{ color: C.faint }} />
+          No policy or procedure on file for this family yet. Upload one in Complete Docs —
+          Attesta will split it into sections here.
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div style={{ marginTop: 22 }}>
+      <div style={{ fontSize: 12, fontFamily: F.mono, color: C.faint, marginBottom: 8,
+        textTransform: "uppercase", letterSpacing: ".05em", display: "flex", alignItems: "center", gap: 6 }}>
+        <FileStack size={13} /> Governing documents
+      </div>
+      {docs.map((d) => <GovDoc key={d.doc_id} doc={d} reload={reload} />)}
+    </div>
+  );
+}
+
+function GovDoc({ doc, reload }) {
+  const [open, setOpen] = useState(true);
+  const approved = doc.status === "approved";
+  async function toggleApprove() {
+    await setGoverningStatus(doc.doc_id, approved ? "draft" : "approved");
+    await reload();
+  }
+  return (
+    <div style={{ border: `1px solid ${approved ? C.seal : C.line}`, borderRadius: 12,
+      background: C.panel, marginBottom: 12, overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 16px",
+        background: approved ? C.sealSoft : "transparent", cursor: "pointer" }}
+        onClick={() => setOpen((v) => !v)}>
+        <ChevronDown size={16} style={{ color: C.faint, transform: open ? "none" : "rotate(-90deg)",
+          transition: ".15s" }} />
+        <span style={{ fontFamily: F.mono, fontSize: 10.5, color: C.seal, background: C.sealSoft,
+          padding: "2px 8px", borderRadius: 20, textTransform: "uppercase" }}>{doc.doc_type}</span>
+        <span style={{ fontSize: 14.5, fontWeight: 600, flex: 1 }}>{doc.title}</span>
+        <button onClick={(e) => { e.stopPropagation(); toggleApprove(); }}
+          style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: F.body, fontSize: 12.5,
+            fontWeight: 600, border: `1px solid ${approved ? C.seal : C.line}`, borderRadius: 7,
+            padding: "5px 11px", cursor: "pointer",
+            background: approved ? C.seal : C.panel, color: approved ? "#fff" : C.ink }}>
+          <BadgeCheck size={14} /> {approved ? "Approved" : "Approve"}
+        </button>
+      </div>
+      {open && (
+        <div style={{ padding: "6px 16px 14px" }}>
+          {doc.sections.map((sec) => <GovSection key={sec.section_id} sec={sec} reload={reload} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GovSection({ sec, reload }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(sec.body_text || "");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setText(sec.body_text || ""); }, [sec.section_id]);
+  async function save() {
+    setBusy(true);
+    try { await editGoverningSection(sec.section_id, text); await reload(); setEditing(false); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div style={{ borderTop: `1px solid ${C.line}`, padding: "12px 0" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>{sec.heading}</span>
+        {!editing && (
+          <button onClick={() => setEditing(true)} style={{ marginLeft: "auto", background: "none",
+            border: "none", cursor: "pointer", color: C.seal, fontSize: 12, fontFamily: F.body,
+            display: "flex", alignItems: "center", gap: 5 }}>
+            <Pencil size={12} /> Edit
+          </button>
+        )}
+      </div>
+      {editing ? (
+        <>
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={5}
+            style={{ ...inputS, width: "100%", lineHeight: 1.5, resize: "vertical" }} />
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button onClick={save} disabled={busy} style={{ display: "flex", alignItems: "center", gap: 6,
+              background: C.seal, color: "#fff", border: "none", padding: "7px 13px", borderRadius: 7,
+              fontFamily: F.body, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+              {busy ? <Loader2 size={13} className="spin" /> : <Save size={13} />} Save
+            </button>
+            <button onClick={() => { setEditing(false); setText(sec.body_text || ""); }}
+              style={{ background: C.panel, color: C.ink, border: `1px solid ${C.line}`, padding: "7px 13px",
+                borderRadius: 7, fontFamily: F.body, fontSize: 12.5, cursor: "pointer" }}>Cancel</button>
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 13, lineHeight: 1.55, color: text ? C.ink : C.faint,
+          whiteSpace: "pre-wrap", fontStyle: text ? "normal" : "italic" }}>
+          {text || "Empty section"}
+        </div>
+      )}
+    </div>
   );
 }

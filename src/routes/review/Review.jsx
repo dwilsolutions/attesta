@@ -8,6 +8,7 @@ export default function Review() {
   const nav = useNavigate();
   const { sys } = useOutletContext();
   const [fams, setFams] = useState([]);
+  const [q, setQ] = useState("");
   useEffect(() => { getFamilies(sys.name).then(setFams); }, []);
 
   const totalObj = fams.reduce((a, f) => a + f.objectives, 0);
@@ -49,14 +50,29 @@ export default function Review() {
           <h2 style={{ fontFamily: F.display, fontSize: 19, fontWeight: 600, margin: 0 }}>Control families</h2>
           <div style={{ position: "relative", width: 220 }}>
             <Search size={14} style={{ position: "absolute", left: 10, top: 9, color: C.faint }} />
-            <input placeholder="Find a control…" style={{ width: "100%", padding: "7px 10px 7px 30px",
+            <input placeholder="Find a control or family…" value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const m = q.trim().match(/^([a-z]{2})[- ]?\d/i);
+                  if (m) nav(`/review/${m[1].toLowerCase()}`);
+                }
+              }}
+              style={{ width: "100%", padding: "7px 10px 7px 30px",
               fontSize: 13, border: `1px solid ${C.line}`, borderRadius: 7, background: C.panel,
               fontFamily: F.body, color: C.ink, boxSizing: "border-box" }} />
           </div>
         </div>
 
         <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden", background: C.panel }}>
-          {fams.map((f, i) => {
+          {fams.filter((f) => {
+            const query = q.trim().toLowerCase();
+            if (!query) return true;
+            const famPrefix = query.match(/^([a-z]{2})/);
+            return f.name.toLowerCase().includes(query)
+              || f.id.toLowerCase().includes(query)
+              || (famPrefix && f.id.toLowerCase() === famPrefix[1]);
+          }).map((f, i) => {
             const fpct = Math.round((f.satisfied / f.objectives) * 100);
             return (
               <div key={f.id} onClick={() => nav(`/review/${f.id}`)} style={{ display: "flex",
