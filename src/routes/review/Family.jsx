@@ -3,7 +3,7 @@ import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import { C, F } from "../../lib/theme";
 import {
   getControlsInFamily, getObjectivesForControl, getProposals, acceptProposal,
-  reviewEvidence, linkEvidence, getEvidenceForControl, resolveAssessment,
+  reviewEvidence, linkEvidence, getEvidenceForControl, resolveAssessment, getLinkedUrls,
 } from "../../lib/queries";
 import {
   ChevronLeft, CircleCheck, CircleDashed, CircleAlert, FileText, Paperclip,
@@ -132,12 +132,27 @@ function EvidencePanel({ control, sys, onLinked }) {
   const [phase, setPhase] = useState("idle"); // idle|reviewing|matches|needsPaste|linking|done
   const [matches, setMatches] = useState([]);
   const [derived, setDerived] = useState({ title: "Evidence", artifactType: "config_export" });
+  const [alreadyLinked, setAlreadyLinked] = useState([]); // [{url, objectives:[]}]
   const [pasteText, setPasteText] = useState("");
   const [reason, setReason] = useState("");
 
   async function review(usePaste) {
     setPhase("reviewing"); setReason("");
     const urlList = urls.split(/\s*\n\s*/).map((u) => u.trim()).filter(Boolean);
+    // heads-up: which pasted URLs are already linked on this control?
+    if (!usePaste && urlList.length) {
+      const linkedMap = await getLinkedUrls(control, sys.name);
+      const dupes = urlList
+        .filter((u) => linkedMap[u])
+        .map((u) => ({ url: u, objectives: linkedMap[u] }));
+      if (dupes.length) {
+        setAlreadyLinked(dupes);
+        // if EVERY pasted url is already linked, stop here — nothing new to review
+        if (dupes.length === urlList.length) { setPhase("idle"); return; }
+      } else {
+        setAlreadyLinked([]);
+      }
+    }
     const res = await reviewEvidence(control, {
       urls: usePaste ? undefined : urlList,
       pasted_text: usePaste ? pasteText : undefined,
@@ -167,7 +182,7 @@ function EvidencePanel({ control, sys, onLinked }) {
   }
 
   function reset() {
-    setUrls(""); setPasteText(""); setMatches([]); setReason("");
+    setUrls(""); setAlreadyLinked([]); setPasteText(""); setMatches([]); setReason("");
     setPhase("idle"); setOpen(false);
   }
 
@@ -192,6 +207,26 @@ function EvidencePanel({ control, sys, onLinked }) {
 
       {(phase === "idle" || phase === "reviewing") && (
         <>
+          {alreadyLinked.length > 0 && (
+            <div style={{ border: `1px solid ${C.claim}`, background: "#FBF3E0", borderRadius: 9,
+              padding: "10px 12px", marginBottom: 10, fontSize: 12.5, color: C.ink }}>
+              <div style={{ fontWeight: 600, color: C.claim, marginBottom: 4, display: "flex",
+                alignItems: "center", gap: 6 }}>
+                <Paperclip size={13} /> Already linked on {control.toUpperCase()}
+              </div>
+              {alreadyLinked.map((d, i) => (
+                <div key={i} style={{ lineHeight: 1.4, marginTop: 2 }}>
+                  <span style={{ fontFamily: F.mono, fontSize: 11 }}>
+                    {d.url.length > 48 ? d.url.slice(0, 48) + "…" : d.url}
+                  </span>
+                  <span style={{ color: C.muted }}> → {d.objectives.join(", ")}</span>
+                </div>
+              ))}
+              <div style={{ marginTop: 5, color: C.muted, fontStyle: "italic" }}>
+                Remove these from the box to skip re-reviewing, or continue to review the rest.
+              </div>
+            </div>
+          )}
           <textarea value={urls} onChange={(e) => setUrls(e.target.value)} rows={3}
             placeholder={"Paste one or more shared links — one per line\n(SharePoint / Drive / URL)"}
             style={{ ...inputS, marginBottom: 10, resize: "vertical", fontFamily: F.mono, fontSize: 12.5 }} />
