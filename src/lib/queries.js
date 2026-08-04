@@ -161,3 +161,13 @@ export async function getEvidenceForControl(controlId, systemName = "Krome") {
   if (error) { console.error("evidence_for_control", error); return []; }
   return data;
 }
+
+/* ---- stage 5: already-linked check --------------------------------- */
+export async function getLinkedUrls(controlId, systemName = "Krome") {
+  // returns { url: [objective_id, ...] } for artifacts already linked on this control
+  if (!hasSupabase) return {};
+  const ev = await getEvidenceForControl(controlId, systemName);
+  const map = {};
+  (ev || []).forEach((e) => { (map[e.url] ||= []).push(e.objective_id); });
+  return map;
+}
