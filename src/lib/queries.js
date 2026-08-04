@@ -212,3 +212,54 @@ export async function getNarratives(controlId, systemName = "Krome") {
   (data || []).forEach((r) => { map[r.objective_id] = r.body_text; });
   return map;
 }
+
+/* ---- governing docs: policies & procedures (the -1 controls) -------- */
+export async function saveGoverningDoc(family, docType, title, sections, systemName = "Krome") {
+  if (!hasSupabase) { console.log("mock saveGoverningDoc", family, docType); return; }
+  const assessment = await resolveAssessment(systemName);
+  const { error } = await supabase.rpc("save_governing_doc", {
+    p_assessment: assessment, p_family: family, p_doc_type: docType,
+    p_title: title, p_sections: sections,
+  });
+  if (error) { console.error("save_governing_doc", error); throw error; }
+}
+
+export async function getGoverningDocs(family, systemName = "Krome") {
+  if (!hasSupabase) return [];
+  const assessment = await resolveAssessment(systemName);
+  if (!assessment) return [];
+  const { data, error } = await supabase.rpc("governing_docs_for_family", {
+    p_assessment: assessment, p_family: family,
+  });
+  if (error) { console.error("governing_docs_for_family", error); return []; }
+  // group flat rows -> [{doc_id, doc_type, title, status, sections:[...]}]
+  const byDoc = {};
+  (data || []).forEach((r) => {
+    if (!byDoc[r.doc_id]) byDoc[r.doc_id] = {
+      doc_id: r.doc_id, doc_type: r.doc_type, title: r.title, status: r.status, sections: [],
+    };
+    if (r.section_id) byDoc[r.doc_id].sections.push({
+      section_id: r.section_id, heading: r.heading, body_text: r.body_text, sort_order: r.sort_order,
+    });
+  });
+  return Object.values(byDoc);
+}
+
+export async function editGoverningSection(sectionId, body) {
+  if (!hasSupabase) { console.log("mock editGoverningSection", sectionId); return; }
+  const { error } = await supabase.rpc("edit_governing_section", {
+    p_section: sectionId, p_body: body,
+  });
+  if (error) { console.error("edit_governing_section", error); throw error; }
+}
+
+export async function setGoverningStatus(docId, status, editor = "duane.wilson@eccalon.com") {
+  if (!hasSupabase) { console.log("mock setGoverningStatus", docId, status); return; }
+  const { error } = await supabase.rpc("set_governing_status", {
+    p_doc: docId, p_status: status, p_editor: editor,
+  });
+  if (error) { console.error("set_governing_status", error); throw error; }
+}
+
+// map a family id -> which control is its "-1"
+export function dashOneControl(family) { return `${family.toLowerCase()}-1`; }
