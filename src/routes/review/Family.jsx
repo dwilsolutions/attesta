@@ -6,11 +6,13 @@ import {
   reviewEvidence, linkEvidence, getEvidenceForControl, resolveAssessment, getLinkedUrls,
   unlinkEvidence, editNarrative, removeNarrative, getNarratives,
   getGoverningDocs, editGoverningSection, setGoverningStatus,
+  runReconcile, getReconciliation,
 } from "../../lib/queries";
 import {
   ChevronLeft, CircleCheck, CircleDashed, CircleAlert, FileText, Paperclip,
   Sparkles, Check, X, Pencil, Loader2, Link2, Plus, ExternalLink, Cloud,
   Image as ImageIcon, Eye, Trash2, Save, FileStack, ChevronDown, BadgeCheck,
+  ShieldCheck, AlertTriangle, Lightbulb, Scale, RefreshCw, CircleCheck as CircleCheck2,
 } from "lucide-react";
 
 const COVER = {
@@ -36,6 +38,8 @@ export default function Family() {
   const [evidence, setEvidence] = useState({}); // objective_id -> [artifacts]
   const [narratives, setNarratives] = useState({}); // objective_id -> approved text
   const [govDocs, setGovDocs] = useState([]);
+  const [recon, setRecon] = useState(null);
+  const [reconBusy, setReconBusy] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -50,12 +54,13 @@ export default function Family() {
   const loadControl = useCallback(async () => {
     if (!openControl) { setObjs([]); setProposals({}); setEvidence({}); return; }
     const isDashOne = /-1$/.test(openControl);
-    const [o, props, ev, narrs, gdocs] = await Promise.all([
+    const [o, props, ev, narrs, gdocs, rec] = await Promise.all([
       getObjectivesForControl(openControl, sys.name),
       getProposals(openControl, sys.name),
       getEvidenceForControl(openControl, sys.name),
       getNarratives(openControl, sys.name),
       isDashOne ? getGoverningDocs(family, sys.name) : Promise.resolve([]),
+      getReconciliation(openControl, sys.name),
     ]);
     setObjs(o);
     const byObj = {}; (props || []).forEach((p) => { byObj[p.objective_id] = p; });
@@ -65,9 +70,18 @@ export default function Family() {
     setEvidence(evByObj);
     setNarratives(narrs || {});
     setGovDocs(gdocs || []);
+    setRecon(rec || null);
   }, [openControl, sys.name]);
 
   useEffect(() => { loadControl(); }, [loadControl]);
+
+  async function onReconcile() {
+    setReconBusy(true);
+    try {
+      const res = await runReconcile(openControl, sys.name);
+      if (res && res.ok !== false) setRecon(res);
+    } finally { setReconBusy(false); }
+  }
 
   async function onAccept(proposal, finalText) {
     await acceptProposal(proposal.proposal_id, "duane.wilson@eccalon.com", finalText);
@@ -118,6 +132,8 @@ export default function Family() {
           {/-1$/.test(openControl) && (
             <GoverningDocs docs={govDocs} reload={loadControl} />
           )}
+
+          <ReconcilePanel control={openControl} recon={recon} busy={reconBusy} onRun={onReconcile} />
 
           <div style={{ fontSize: 12, fontFamily: F.mono, color: C.faint, margin: "26px 0 6px",
             textTransform: "uppercase", letterSpacing: ".05em" }}>
@@ -629,6 +645,123 @@ function GovSection({ sec, reload }) {
           {text || "Empty section"}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---------------- reconcile panel (unified AI check) ---------------- */
+const VERDICT = {
+  met:        { c: C.seal,  bg: C.sealSoft, label: "Requirements met", Icon: CircleCheck2 },
+  partial:    { c: C.claim, bg: "#FBF3E0",  label: "Partially met",    Icon: AlertTriangle },
+  not_met:    { c: "#B4402F", bg: "#FBEAE6", label: "Not met",         Icon: AlertTriangle },
+  consistent:    { c: C.seal, bg: C.sealSoft, label: "Consistent across documents", Icon: CircleCheck2 },
+  issues_found:  { c: C.claim, bg: "#FBF3E0", label: "Consistency issues found",     Icon: AlertTriangle },
+};
+
+function ReconcilePanel({ control, recon, busy, onRun }) {
+  const req = recon?.requirements;
+  const con = recon?.consistency;
+  const imp = recon?.improvements || [];
+  const has = !!recon;
+
+  return (
+    <div style={{ marginTop: 24, border: `1.5px solid ${C.seal}`, borderRadius: 13,
+      background: "#F4FAF9", padding: "18px 20px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: has ? 16 : 4 }}>
+        <Scale size={17} style={{ color: C.seal }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 14.5, fontWeight: 600 }}>Reconcile {control.toUpperCase()}</div>
+          <div style={{ fontSize: 12.5, color: C.muted }}>
+            Checks all documents together against the requirement, for consistency, and for improvements.
+          </div>
+        </div>
+        <button onClick={onRun} disabled={busy}
+          style={{ display: "flex", alignItems: "center", gap: 7, background: C.seal, color: "#fff",
+            border: "none", padding: "9px 15px", borderRadius: 9, fontFamily: F.body, fontSize: 13.5,
+            fontWeight: 600, cursor: busy ? "default" : "pointer" }}>
+          {busy ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />}
+          {has ? "Re-run" : "Reconcile"}
+        </button>
+      </div>
+
+      {busy && !has && (
+        <div style={{ fontSize: 13, color: C.muted, display: "flex", alignItems: "center", gap: 8 }}>
+          <Loader2 size={14} className="spin" style={{ color: C.seal }} /> Reading every document for this control…
+        </div>
+      )}
+
+      {has && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {/* 1. requirements */}
+          {req && <VerdictBlock title="Against requirements" verdict={req.verdict}
+            body={req.detail} />}
+
+          {/* 2. consistency */}
+          {con && (
+            <VerdictBlock title="Consistency across documents" verdict={con.verdict}
+              body={con.verdict === "consistent" ? "No contradictions found across policy, procedure, plan, SSP, and evidence." : null}>
+              {con.issues && con.issues.length > 0 && (
+                <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                  {con.issues.map((iss, i) => (
+                    <div key={i} style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+                      <span style={{ fontFamily: F.mono, fontSize: 11, color: C.claim,
+                        background: "#FBF3E0", padding: "1px 7px", borderRadius: 20 }}>{iss.between}</span>
+                      <span style={{ color: C.ink, marginLeft: 8 }}>{iss.problem}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </VerdictBlock>
+          )}
+
+          {/* 3. improvements */}
+          <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, background: C.panel, padding: "13px 15px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 600, marginBottom: imp.length ? 10 : 0 }}>
+              <Lightbulb size={15} style={{ color: C.claim }} /> Suggested improvements
+              <span style={{ fontFamily: F.mono, fontSize: 11, color: C.faint, marginLeft: "auto" }}>
+                {imp.length ? `${imp.length}` : "none — looks solid"}
+              </span>
+            </div>
+            {imp.map((s2, i) => (
+              <div key={i} style={{ borderTop: i ? `1px solid ${C.line}` : "none", paddingTop: i ? 11 : 0, marginTop: i ? 11 : 0 }}>
+                <div style={{ fontFamily: F.mono, fontSize: 11, color: C.seal, marginBottom: 6 }}>{s2.layer}</div>
+                <div style={{ fontSize: 12, color: C.muted, marginBottom: 2 }}>Original</div>
+                <div style={{ fontSize: 12.5, lineHeight: 1.5, color: C.ink, background: "#FBEAE6",
+                  borderRadius: 6, padding: "7px 10px", marginBottom: 8 }}>{s2.original}</div>
+                <div style={{ fontSize: 12, color: C.muted, marginBottom: 2 }}>Suggested</div>
+                <div style={{ fontSize: 12.5, lineHeight: 1.5, color: C.ink, background: C.sealSoft,
+                  borderRadius: 6, padding: "7px 10px", marginBottom: 6 }}>{s2.improved}</div>
+                <div style={{ fontSize: 12, color: C.muted, fontStyle: "italic", display: "flex", gap: 6 }}>
+                  <Lightbulb size={12} style={{ color: C.claim, flexShrink: 0, marginTop: 2 }} /> {s2.why}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {recon.ran_at && (
+            <div style={{ fontSize: 11, color: C.faint, fontFamily: F.mono, textAlign: "right" }}>
+              last run {new Date(recon.ran_at).toLocaleString()}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VerdictBlock({ title, verdict, body, children }) {
+  const v = VERDICT[verdict] || { c: C.faint, bg: C.lockBg, label: verdict, Icon: AlertTriangle };
+  const Icon = v.Icon;
+  return (
+    <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, background: C.panel, padding: "13px 15px" }}>
+      <div style={{ fontSize: 12, fontFamily: F.mono, color: C.faint, textTransform: "uppercase",
+        letterSpacing: ".04em", marginBottom: 8 }}>{title}</div>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600,
+        color: v.c, background: v.bg, padding: "4px 11px", borderRadius: 20 }}>
+        <Icon size={14} /> {v.label}
+      </div>
+      {body && <div style={{ fontSize: 12.5, lineHeight: 1.55, color: C.ink, marginTop: 9 }}>{body}</div>}
+      {children}
     </div>
   );
 }
