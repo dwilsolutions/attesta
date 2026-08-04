@@ -171,3 +171,44 @@ export async function getLinkedUrls(controlId, systemName = "Krome") {
   (ev || []).forEach((e) => { (map[e.url] ||= []).push(e.objective_id); });
   return map;
 }
+
+/* ---- stage 5/4: reversibility -------------------------------------- */
+export async function unlinkEvidence(objective, artifactId, systemName = "Krome") {
+  if (!hasSupabase) { console.log("mock unlink", artifactId); return; }
+  const assessment = await resolveAssessment(systemName);
+  const { error } = await supabase.rpc("unlink_evidence", {
+    p_assessment: assessment, p_objective: objective, p_artifact: artifactId,
+  });
+  if (error) { console.error("unlink_evidence", error); throw error; }
+}
+
+export async function editNarrative(objective, newText, editor, systemName = "Krome") {
+  if (!hasSupabase) { console.log("mock editNarrative", objective); return; }
+  const assessment = await resolveAssessment(systemName);
+  const { error } = await supabase.rpc("edit_narrative", {
+    p_assessment: assessment, p_objective: objective, p_new_text: newText, p_editor: editor,
+  });
+  if (error) { console.error("edit_narrative", error); throw error; }
+}
+
+export async function removeNarrative(objective, systemName = "Krome") {
+  if (!hasSupabase) { console.log("mock removeNarrative", objective); return; }
+  const assessment = await resolveAssessment(systemName);
+  const { error } = await supabase.rpc("remove_narrative", {
+    p_assessment: assessment, p_objective: objective,
+  });
+  if (error) { console.error("remove_narrative", error); throw error; }
+}
+
+export async function getNarratives(controlId, systemName = "Krome") {
+  if (!hasSupabase) return {};
+  const assessment = await resolveAssessment(systemName);
+  if (!assessment) return {};
+  const { data, error } = await supabase.rpc("narrative_for_control", {
+    p_assessment: assessment, p_control: controlId,
+  });
+  if (error) { console.error("narrative_for_control", error); return {}; }
+  const map = {};
+  (data || []).forEach((r) => { map[r.objective_id] = r.body_text; });
+  return map;
+}
