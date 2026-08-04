@@ -68,9 +68,11 @@ export default function Ingest() {
       try { await saveGoverningDoc(family, d.docType, title, sections, sys.name); } catch (e) {}
     }
 
-    // Remaining docs (SSP/other) feed narrative drafting.
+    // Remaining docs (SSP/other) feed narrative drafting. If the upload was
+    // ONLY policies/procedures, there's nothing to draft — finish here.
     const narrativeDocs = parsed.filter((x) => x.docType !== "policy" && x.docType !== "procedure");
-    const corpus = (narrativeDocs.length ? narrativeDocs : parsed)
+    if (narrativeDocs.length === 0) { setPhase("done"); return; }
+    const corpus = narrativeDocs
       .map((d) => `### SOURCE: ${d.name} (${d.docType})\n${d.text}`).join("\n\n");
     setProgress({ done: 0, total: SEED_CONTROLS.length });
     for (let i = 0; i < SEED_CONTROLS.length; i++) {
