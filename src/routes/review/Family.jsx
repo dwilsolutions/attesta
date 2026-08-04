@@ -125,15 +125,15 @@ export default function Family() {
         </div>
 
         <div style={{ padding: "24px 40px", maxWidth: 820 }}>
-          {openControl && (
+          {openControl ? (
             <EvidencePanel control={openControl} sys={sys} onLinked={loadControl} />
-          )}
+          ) : null}
 
-          {/-1$/.test(openControl) && (
+          {openControl && /-1$/.test(openControl) && (
             <GoverningDocs docs={govDocs} reload={loadControl} />
           )}
 
-          <ReconcilePanel control={openControl} recon={recon} busy={reconBusy} onRun={onReconcile} />
+          {openControl && <ReconcilePanel control={openControl} recon={recon} busy={reconBusy} onRun={onReconcile} />}
 
           <div style={{ fontSize: 12, fontFamily: F.mono, color: C.faint, margin: "26px 0 6px",
             textTransform: "uppercase", letterSpacing: ".05em" }}>
@@ -224,7 +224,7 @@ function EvidencePanel({ control, sys, onLinked }) {
       <button onClick={() => setOpen(true)} style={{ display: "flex", alignItems: "center", gap: 8,
         background: C.sealSoft, border: `1px solid ${C.seal}`, borderRadius: 10, padding: "11px 16px",
         cursor: "pointer", fontFamily: F.body, fontSize: 13.5, fontWeight: 600, color: C.sealDk }}>
-        <Link2 size={16} /> Link evidence for {control.toUpperCase()}
+        <Link2 size={16} /> Link evidence for {(control||"").toUpperCase()}
       </button>
     );
   }
@@ -233,7 +233,7 @@ function EvidencePanel({ control, sys, onLinked }) {
     <div style={{ border: `1.5px solid ${C.seal}`, borderRadius: 13, background: "#F4FAF9", padding: "18px 20px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
         <Link2 size={16} style={{ color: C.seal }} />
-        <span style={{ fontSize: 14.5, fontWeight: 600 }}>Link evidence for {control.toUpperCase()}</span>
+        <span style={{ fontSize: 14.5, fontWeight: 600 }}>Link evidence for {(control||"").toUpperCase()}</span>
         <button onClick={reset} style={{ marginLeft: "auto", background: "none", border: "none",
           cursor: "pointer", color: C.faint }}><X size={16} /></button>
       </div>
@@ -245,7 +245,7 @@ function EvidencePanel({ control, sys, onLinked }) {
               padding: "10px 12px", marginBottom: 10, fontSize: 12.5, color: C.ink }}>
               <div style={{ fontWeight: 600, color: C.claim, marginBottom: 4, display: "flex",
                 alignItems: "center", gap: 6 }}>
-                <Paperclip size={13} /> Already linked on {control.toUpperCase()}
+                <Paperclip size={13} /> Already linked on {(control||"").toUpperCase()}
               </div>
               {alreadyLinked.map((d, i) => (
                 <div key={i} style={{ lineHeight: 1.4, marginTop: 2 }}>
@@ -503,7 +503,7 @@ function ObjectiveCard({ o, proposal, evidence, approvedText, onAccept, sys, rel
                       : <Paperclip size={13} style={{ color: C.seal }} />}
                     <span style={{ fontWeight: 600 }}>{e.title}</span>
                     {e.artifact_type && <span style={{ fontFamily: F.mono, fontSize: 10, color: C.seal, background: C.sealSoft,
-                      padding: "1px 6px", borderRadius: 20 }}>{e.artifact_type.replace("_"," ")}</span>}
+                      padding: "1px 6px", borderRadius: 20 }}>{(e.artifact_type||"").replace("_"," ")}</span>}
                     <span style={{ fontFamily: F.mono, fontSize: 10, color: C.muted, textTransform: "uppercase",
                       border: `1px solid ${C.line}`, borderRadius: 20, padding: "1px 6px" }}>{e.method}</span>
                     <ExternalLink size={12} style={{ color: C.faint, marginLeft: "auto" }} />
@@ -670,7 +670,7 @@ function ReconcilePanel({ control, recon, busy, onRun }) {
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: has ? 16 : 4 }}>
         <Scale size={17} style={{ color: C.seal }} />
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14.5, fontWeight: 600 }}>Reconcile {control.toUpperCase()}</div>
+          <div style={{ fontSize: 14.5, fontWeight: 600 }}>Reconcile {(control||"").toUpperCase()}</div>
           <div style={{ fontSize: 12.5, color: C.muted }}>
             Checks all documents together against the requirement, for consistency, and for improvements.
           </div>
