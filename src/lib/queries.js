@@ -297,3 +297,11 @@ export async function getReconciliation(controlId, systemName = "Krome") {
   if (error) { console.error("get_reconciliation", error); return null; }
   return (data && data[0]) || null;
 }
+
+/* ---- FedRAMP SAR requirements (from SRTM) --------------------------- */
+export async function getSarForControl(controlId) {
+  if (!hasSupabase) return [];
+  const { data, error } = await supabase.rpc("sar_for_control", { p_control: controlId });
+  if (error) { console.error("sar_for_control", error); return []; }
+  return data || [];
+}
