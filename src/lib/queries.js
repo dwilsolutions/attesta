@@ -263,3 +263,37 @@ export async function setGoverningStatus(docId, status, editor = "duane.wilson@e
 
 // map a family id -> which control is its "-1"
 export function dashOneControl(family) { return `${family.toLowerCase()}-1`; }
+
+/* ---- unified reconciliation ---------------------------------------- */
+export async function getControlDossier(controlId, systemName = "Krome") {
+  if (!hasSupabase) return { control_id: controlId, objectives: [], governing_docs: [] };
+  const assessment = await resolveAssessment(systemName);
+  const { data, error } = await supabase.rpc("control_dossier", {
+    p_assessment: assessment, p_control: controlId,
+  });
+  if (error) { console.error("control_dossier", error); return { control_id: controlId, objectives: [], governing_docs: [] }; }
+  return data;
+}
+
+export async function runReconcile(controlId, systemName = "Krome") {
+  if (!hasSupabase) {
+    return { ok: true, requirements: { verdict: "partial", detail: "Sample reconcile result." },
+      consistency: { verdict: "consistent", issues: [] }, improvements: [] };
+  }
+  const assessment = await resolveAssessment(systemName);
+  const { data, error } = await supabase.functions.invoke("reconcile", {
+    body: { assessment_id: assessment, control_id: controlId },
+  });
+  if (error) { console.error("reconcile", error); return { ok: false, reason: String(error) }; }
+  return data;
+}
+
+export async function getReconciliation(controlId, systemName = "Krome") {
+  if (!hasSupabase) return null;
+  const assessment = await resolveAssessment(systemName);
+  const { data, error } = await supabase.rpc("get_reconciliation", {
+    p_assessment: assessment, p_scope_type: "control", p_scope_id: controlId,
+  });
+  if (error) { console.error("get_reconciliation", error); return null; }
+  return (data && data[0]) || null;
+}

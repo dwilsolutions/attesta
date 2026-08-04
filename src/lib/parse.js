@@ -35,5 +35,7 @@ export function guessDocType(filename) {
   if (n.includes("ssp") || n.includes("security plan")) return "ssp";
   if (n.includes("policy") || n.includes("policies")) return "policy";
   if (n.includes("procedure")) return "procedure";
+  if (n.includes("plan") || n.includes("irp") || n.includes("iscp") || n.includes("cmp"))
+    return "plan";
   return "other";
 }
