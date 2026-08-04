@@ -60,7 +60,7 @@ export default function Ingest() {
 
     // Policies & procedures are the -1 controls: split by heading + save as
     // governing docs rather than drafting objective narratives from them.
-    for (const d of parsed.filter((x) => x.docType === "policy" || x.docType === "procedure")) {
+    for (const d of parsed.filter((x) => x.docType === "policy" || x.docType === "procedure" || x.docType === "plan")) {
       const family = inferFamily(d.name) || inferFamily(d.text);
       if (!family) continue; // can't place it; leave for manual handling
       const sections = splitIntoSections(d.text);
@@ -70,7 +70,7 @@ export default function Ingest() {
 
     // Remaining docs (SSP/other) feed narrative drafting. If the upload was
     // ONLY policies/procedures, there's nothing to draft — finish here.
-    const narrativeDocs = parsed.filter((x) => x.docType !== "policy" && x.docType !== "procedure");
+    const narrativeDocs = parsed.filter((x) => x.docType !== "policy" && x.docType !== "procedure" && x.docType !== "plan");
     if (narrativeDocs.length === 0) { setPhase("done"); return; }
     const corpus = narrativeDocs
       .map((d) => `### SOURCE: ${d.name} (${d.docType})\n${d.text}`).join("\n\n");
