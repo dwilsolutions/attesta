@@ -4,10 +4,12 @@ import { C, F } from "../../lib/theme";
 import {
   getControlsInFamily, getObjectivesForControl, getProposals, acceptProposal,
   reviewEvidence, linkEvidence, getEvidenceForControl, resolveAssessment, getLinkedUrls,
+  unlinkEvidence, editNarrative, removeNarrative, getNarratives,
 } from "../../lib/queries";
 import {
   ChevronLeft, CircleCheck, CircleDashed, CircleAlert, FileText, Paperclip,
   Sparkles, Check, X, Pencil, Loader2, Link2, Plus, ExternalLink, Cloud,
+  Image as ImageIcon, Eye, Trash2, Save,
 } from "lucide-react";
 
 const COVER = {
@@ -31,6 +33,7 @@ export default function Family() {
   const [objs, setObjs] = useState([]);
   const [proposals, setProposals] = useState({});
   const [evidence, setEvidence] = useState({}); // objective_id -> [artifacts]
+  const [narratives, setNarratives] = useState({}); // objective_id -> approved text
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -44,10 +47,11 @@ export default function Family() {
 
   const loadControl = useCallback(async () => {
     if (!openControl) { setObjs([]); setProposals({}); setEvidence({}); return; }
-    const [o, props, ev] = await Promise.all([
+    const [o, props, ev, narrs] = await Promise.all([
       getObjectivesForControl(openControl, sys.name),
       getProposals(openControl, sys.name),
       getEvidenceForControl(openControl, sys.name),
+      getNarratives(openControl, sys.name),
     ]);
     setObjs(o);
     const byObj = {}; (props || []).forEach((p) => { byObj[p.objective_id] = p; });
@@ -55,6 +59,7 @@ export default function Family() {
     const evByObj = {};
     (ev || []).forEach((e) => { (evByObj[e.objective_id] ||= []).push(e); });
     setEvidence(evByObj);
+    setNarratives(narrs || {});
   }, [openControl, sys.name]);
 
   useEffect(() => { loadControl(); }, [loadControl]);
@@ -115,7 +120,8 @@ export default function Family() {
 
           {objs.map((o) => (
             <ObjectiveCard key={o.objective_id} o={o} proposal={proposals[o.objective_id]}
-              evidence={evidence[o.objective_id]} onAccept={onAccept} />
+              evidence={evidence[o.objective_id]} approvedText={narratives[o.objective_id]}
+              onAccept={onAccept} sys={sys} reload={loadControl} />
           ))}
         </div>
       </div>
@@ -131,7 +137,7 @@ function EvidencePanel({ control, sys, onLinked }) {
   const [artifactType, setArtifactType] = useState("config_export");
   const [phase, setPhase] = useState("idle"); // idle|reviewing|matches|needsPaste|linking|done
   const [matches, setMatches] = useState([]);
-  const [derived, setDerived] = useState({ title: "Evidence", artifactType: "config_export" });
+  const [reviewFiles, setReviewFiles] = useState([]);
   const [alreadyLinked, setAlreadyLinked] = useState([]); // [{url, objectives:[]}]
   const [pasteText, setPasteText] = useState("");
   const [reason, setReason] = useState("");
@@ -159,7 +165,7 @@ function EvidencePanel({ control, sys, onLinked }) {
     });
     if (res.needs_paste) { setReason(res.reason || ""); setPhase("needsPaste"); return; }
     if (!res.ok) { setReason(res.reason || "Review failed."); setPhase("needsPaste"); return; }
-    setDerived({ title: res.title || "Evidence", artifactType: res.artifact_type || "config_export" });
+    setReviewFiles(res.files || []);
     setMatches((res.matches || []).map((m) => ({ ...m, keep: true })));
     setPhase("matches");
   }
@@ -167,13 +173,15 @@ function EvidencePanel({ control, sys, onLinked }) {
   async function confirm() {
     setPhase("linking");
     const assessment = await resolveAssessment(sys.name);
-    const urlList = urls.split(/\s*\n\s*/).map((u) => u.trim()).filter(Boolean);
-    const primaryUrl = urlList[0] || "";
     for (const m of matches.filter((x) => x.keep)) {
       try {
         await linkEvidence(m.objective_id, {
-          assessment, title: title || "Evidence", url: primaryUrl, artifactType,
-          method: m.method, supports: m.supports,
+          assessment,
+          title: m.title || "Evidence",
+          url: m.source_url || "",
+          artifactType: m.artifact_type || "config_export",
+          method: m.method,
+          supports: m.observed || m.supports,
         }, sys.name);
       } catch (e) { /* continue */ }
     }
@@ -182,7 +190,7 @@ function EvidencePanel({ control, sys, onLinked }) {
   }
 
   function reset() {
-    setUrls(""); setAlreadyLinked([]); setPasteText(""); setMatches([]); setReason("");
+    setUrls(""); setAlreadyLinked([]); setReviewFiles([]); setPasteText(""); setMatches([]); setReason("");
     setPhase("idle"); setOpen(false);
   }
 
@@ -257,13 +265,36 @@ function EvidencePanel({ control, sys, onLinked }) {
 
       {phase === "matches" && (
         <>
-          <div style={{ fontSize: 13, color: C.muted, marginBottom: 6 }}>
-            Detected: <strong style={{ color: C.ink }}>{derived.title}</strong>
-            <span style={{ fontFamily: F.mono, fontSize: 11, marginLeft: 8, color: C.seal }}>
-              {derived.artifactType.replace("_", " ")}</span>
-          </div>
+          {reviewFiles.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontFamily: F.mono, color: C.faint, textTransform: "uppercase",
+                letterSpacing: ".04em", marginBottom: 8 }}>Attesta read {reviewFiles.length} file{reviewFiles.length>1?"s":""}</div>
+              {reviewFiles.map((f, i) => (
+                <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "9px 11px",
+                  background: C.panel, border: `1px solid ${C.line}`, borderRadius: 9, marginBottom: 6 }}>
+                  <div style={{ marginTop: 1 }}>
+                    {f.is_image
+                      ? <ImageIcon size={15} style={{ color: C.seal }} />
+                      : <FileText size={15} style={{ color: C.seal }} />}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{f.title}</span>
+                      <span style={{ fontFamily: F.mono, fontSize: 10.5, color: C.seal, background: C.sealSoft,
+                        padding: "1px 7px", borderRadius: 20 }}>{(f.artifact_type||"").replace("_"," ")}</span>
+                      {f.is_image && <span style={{ fontFamily: F.mono, fontSize: 10, color: "#7A5C00",
+                        background: "#FBF3E0", padding: "1px 7px", borderRadius: 20, display: "flex",
+                        alignItems: "center", gap: 3 }}><Eye size={10} /> read by vision</span>}
+                    </div>
+                    {f.observed && <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3, lineHeight: 1.45,
+                      fontStyle: "italic" }}>&ldquo;{f.observed}&rdquo;</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 10 }}>
-            {matches.length ? `Attesta found ${matches.filter(m=>m.keep).length} objective${matches.length>1?"s":""} this supports:` : "No objectives matched this evidence."}
+            {matches.length ? `These map to ${matches.filter(m=>m.keep).length} objective${matches.filter(m=>m.keep).length>1?"s":""}:` : "No objectives matched this evidence."}
           </div>
           {matches.map((m, i) => (
             <label key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 12px",
@@ -280,6 +311,8 @@ function EvidencePanel({ control, sys, onLinked }) {
                     textTransform: "uppercase" }}>{m.confidence}</span>
                 </div>
                 <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3, lineHeight: 1.4 }}>{m.supports}</div>
+                {m.title && <div style={{ fontSize: 11, color: C.faint, marginTop: 3, fontFamily: F.mono }}>
+                  from: {m.title}</div>}
               </div>
             </label>
           ))}
@@ -320,7 +353,7 @@ const btnS = (on) => ({
 });
 
 /* ---------------- objective card ---------------- */
-function ObjectiveCard({ o, proposal, evidence, onAccept }) {
+function ObjectiveCard({ o, proposal, evidence, approvedText, onAccept, sys, reload }) {
   const cov = COVER[o.coverage] || COVER.gap;
   const Icon = cov.Icon;
   const unproven = o.narrative_approved && !o.evidence_linked;
@@ -328,7 +361,25 @@ function ObjectiveCard({ o, proposal, evidence, onAccept }) {
   const [draft, setDraft] = useState(proposal?.draft_text || "");
   const [busy, setBusy] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [editingNarr, setEditingNarr] = useState(false);
+  const [narrText, setNarrText] = useState(approvedText || "");
+  const [narrBusy, setNarrBusy] = useState(false);
   useEffect(() => { setDraft(proposal?.draft_text || ""); }, [proposal?.proposal_id]);
+  useEffect(() => { setNarrText(approvedText || ""); }, [approvedText]);
+
+  async function saveNarr() {
+    setNarrBusy(true);
+    try { await editNarrative(o.objective_id, narrText, "duane.wilson@eccalon.com", sys.name); await reload(); setEditingNarr(false); }
+    finally { setNarrBusy(false); }
+  }
+  async function removeNarr() {
+    setNarrBusy(true);
+    try { await removeNarrative(o.objective_id, sys.name); await reload(); setEditingNarr(false); }
+    finally { setNarrBusy(false); }
+  }
+  async function unlink(artifactId) {
+    try { await unlinkEvidence(o.objective_id, artifactId, sys.name); await reload(); } catch (e) {}
+  }
 
   const showProposal = proposal && proposal.status === "proposed" && !dismissed;
   const hasEvidence = evidence && evidence.length > 0;
@@ -385,22 +436,60 @@ function ObjectiveCard({ o, proposal, evidence, onAccept }) {
         </div>
       ) : (
         <>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <Chip on={o.narrative_approved} Icon={FileText} onLabel="Narrative approved" offLabel="No narrative" />
             <Chip on={o.evidence_linked || hasEvidence} Icon={Paperclip} onLabel="Evidence linked" offLabel="No evidence" warn={unproven} />
+            {o.narrative_approved && !editingNarr && (
+              <button onClick={() => { setEditingNarr(true); setNarrText(approvedText || ""); }}
+                style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer",
+                  color: C.seal, fontSize: 12, fontFamily: F.body, display: "flex", alignItems: "center", gap: 5 }}>
+                <Pencil size={12} /> Edit narrative</button>
+            )}
           </div>
+          {editingNarr && (
+            <div style={{ marginTop: 12, borderTop: `1px dashed ${C.line}`, paddingTop: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: C.seal, marginBottom: 6 }}>Edit approved narrative</div>
+              <textarea value={narrText} onChange={(e) => setNarrText(e.target.value)} rows={4}
+                style={{ ...inputS, width: "100%", lineHeight: 1.5, resize: "vertical" }} />
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <button onClick={saveNarr} disabled={narrBusy || !narrText.trim()}
+                  style={{ display: "flex", alignItems: "center", gap: 6, background: narrText.trim() ? C.seal : C.lockBg,
+                    color: narrText.trim() ? "#fff" : C.faint, border: "none", padding: "8px 14px", borderRadius: 8,
+                    fontFamily: F.body, fontSize: 13, fontWeight: 600, cursor: narrText.trim() ? "pointer" : "default" }}>
+                  {narrBusy ? <Loader2 size={13} className="spin" /> : <Save size={13} />} Save</button>
+                <button onClick={() => setEditingNarr(false)} style={{ background: C.panel, color: C.ink,
+                  border: `1px solid ${C.line}`, padding: "8px 14px", borderRadius: 8, fontFamily: F.body,
+                  fontSize: 13, cursor: "pointer" }}>Cancel</button>
+                <button onClick={removeNarr} disabled={narrBusy} style={{ marginLeft: "auto", background: "none",
+                  color: "#B4402F", border: "none", padding: "8px 10px", borderRadius: 8, fontFamily: F.body,
+                  fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                  <Trash2 size={13} /> Remove narrative</button>
+              </div>
+            </div>
+          )}
           {hasEvidence && (
             <div style={{ marginTop: 10, borderTop: `1px dashed ${C.line}`, paddingTop: 10 }}>
               {evidence.map((e) => (
-                <a key={e.artifact_id} href={e.url} target="_blank" rel="noreferrer"
-                  style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none",
-                    color: C.ink, fontSize: 12.5, padding: "4px 0" }}>
-                  <Paperclip size={13} style={{ color: C.seal }} />
-                  <span style={{ fontWeight: 500 }}>{e.title}</span>
-                  <span style={{ fontFamily: F.mono, fontSize: 10.5, color: C.muted, textTransform: "uppercase",
-                    border: `1px solid ${C.line}`, borderRadius: 20, padding: "1px 6px" }}>{e.method}</span>
-                  <ExternalLink size={12} style={{ color: C.faint }} />
-                </a>
+                <div key={e.artifact_id} style={{ padding: "6px 0" }}>
+                  <a href={e.url} target="_blank" rel="noreferrer"
+                    style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none", color: C.ink, fontSize: 12.5 }}>
+                    {e.artifact_type === "screenshot" || e.artifact_type === "diagram"
+                      ? <ImageIcon size={13} style={{ color: C.seal }} />
+                      : <Paperclip size={13} style={{ color: C.seal }} />}
+                    <span style={{ fontWeight: 600 }}>{e.title}</span>
+                    {e.artifact_type && <span style={{ fontFamily: F.mono, fontSize: 10, color: C.seal, background: C.sealSoft,
+                      padding: "1px 6px", borderRadius: 20 }}>{e.artifact_type.replace("_"," ")}</span>}
+                    <span style={{ fontFamily: F.mono, fontSize: 10, color: C.muted, textTransform: "uppercase",
+                      border: `1px solid ${C.line}`, borderRadius: 20, padding: "1px 6px" }}>{e.method}</span>
+                    <ExternalLink size={12} style={{ color: C.faint, marginLeft: "auto" }} />
+                  </a>
+                  {e.supports && <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3, marginLeft: 21,
+                    fontStyle: "italic", lineHeight: 1.4 }}>&ldquo;{e.supports}&rdquo;</div>}
+                  <button onClick={() => unlink(e.artifact_id)} style={{ marginLeft: 21, marginTop: 2,
+                    background: "none", border: "none", cursor: "pointer", color: C.faint, fontSize: 11,
+                    fontFamily: F.body, display: "flex", alignItems: "center", gap: 4, padding: 0 }}>
+                    <Trash2 size={11} /> Unlink</button>
+                </div>
               ))}
             </div>
           )}
