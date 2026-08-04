@@ -2,8 +2,10 @@ import React, { useState } from "react";
 import { useOutletContext, useNavigate } from "react-router-dom";
 import { C, F } from "../lib/theme";
 import { extractText, guessDocType } from "../lib/parse";
+import { splitIntoSections } from "../lib/splitDoc";
+import { inferFamily } from "../lib/inferFamily";
 import { supabase, hasSupabase } from "../lib/supabase";
-import { resolveAssessment } from "../lib/queries";
+import { resolveAssessment, saveGoverningDoc } from "../lib/queries";
 import {
   PencilLine, UploadCloud, FileText, Check, Loader2, ChevronRight,
   Sparkles, AlertCircle, Cloud, HardDrive, X, ChevronDown, FileStack,
@@ -55,7 +57,21 @@ export default function Ingest() {
     if (!parsed.length) return;
     setPhase("drafting");
     const assessment = await resolveAssessment(sys.name);
-    const corpus = parsed.map((d) => `### SOURCE: ${d.name} (${d.docType})\n${d.text}`).join("\n\n");
+
+    // Policies & procedures are the -1 controls: split by heading + save as
+    // governing docs rather than drafting objective narratives from them.
+    for (const d of parsed.filter((x) => x.docType === "policy" || x.docType === "procedure")) {
+      const family = inferFamily(d.name) || inferFamily(d.text);
+      if (!family) continue; // can't place it; leave for manual handling
+      const sections = splitIntoSections(d.text);
+      const title = d.name.replace(/\.[a-z0-9]+$/i, "").replace(/_/g, " ");
+      try { await saveGoverningDoc(family, d.docType, title, sections, sys.name); } catch (e) {}
+    }
+
+    // Remaining docs (SSP/other) feed narrative drafting.
+    const narrativeDocs = parsed.filter((x) => x.docType !== "policy" && x.docType !== "procedure");
+    const corpus = (narrativeDocs.length ? narrativeDocs : parsed)
+      .map((d) => `### SOURCE: ${d.name} (${d.docType})\n${d.text}`).join("\n\n");
     setProgress({ done: 0, total: SEED_CONTROLS.length });
     for (let i = 0; i < SEED_CONTROLS.length; i++) {
       try {
