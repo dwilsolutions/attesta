@@ -215,13 +215,47 @@ export async function getNarratives(controlId, systemName = "Krome") {
 
 /* ---- governing docs: policies & procedures (the -1 controls) -------- */
 export async function saveGoverningDoc(family, docType, title, sections, systemName = "Krome") {
-  if (!hasSupabase) { console.log("mock saveGoverningDoc", family, docType); return; }
+  if (!hasSupabase) { console.log("mock saveGoverningDoc", family, docType); return null; }
   const assessment = await resolveAssessment(systemName);
-  const { error } = await supabase.rpc("save_governing_doc", {
+  const { data, error } = await supabase.rpc("save_governing_doc", {
     p_assessment: assessment, p_family: family, p_doc_type: docType,
     p_title: title, p_sections: sections,
   });
   if (error) { console.error("save_governing_doc", error); throw error; }
+  return data; // the new doc_id
+}
+
+// Tag a doc's sections to the controls they address (AI pass at ingest).
+export async function tagSections(docId, family) {
+  if (!hasSupabase) { console.log("mock tagSections", docId); return; }
+  const { data, error } = await supabase.functions.invoke("tag-sections", {
+    body: { doc_id: docId, family },
+  });
+  if (error) { console.error("tag-sections", error); return; }
+  return data;
+}
+
+// Governing-doc sections that apply to a control (via section-control mapping).
+export async function getDocsForControl(controlId, systemName = "Krome") {
+  if (!hasSupabase) return [];
+  const assessment = await resolveAssessment(systemName);
+  if (!assessment) return [];
+  const { data, error } = await supabase.rpc("docs_for_control", {
+    p_assessment: assessment, p_control: controlId,
+  });
+  if (error) { console.error("docs_for_control", error); return []; }
+  // group flat rows -> [{doc_id, doc_type, title, sections:[...]}]
+  const byDoc = {};
+  (data || []).forEach((r) => {
+    if (!byDoc[r.doc_id]) byDoc[r.doc_id] = {
+      doc_id: r.doc_id, doc_type: r.doc_type, title: r.doc_title, sections: [],
+    };
+    byDoc[r.doc_id].sections.push({
+      section_id: r.section_id, heading: r.heading, body_text: r.body_text,
+      sort_order: r.sort_order, confidence: r.confidence,
+    });
+  });
+  return Object.values(byDoc);
 }
 
 export async function getGoverningDocs(family, systemName = "Krome") {
