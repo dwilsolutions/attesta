@@ -5,7 +5,9 @@ import { extractText, guessDocType } from "../lib/parse";
 import { splitIntoSections } from "../lib/splitDoc";
 import { inferFamily, inferControl } from "../lib/inferFamily";
 import { supabase, hasSupabase } from "../lib/supabase";
-import { resolveAssessment, saveGoverningDoc, mapDocToControl, getAllControlIds } from "../lib/queries";
+import { resolveAssessment, saveGoverningDoc, mapDocToControl, getAllControlIds,
+  getObjectivesForControl, saveExtractedNarratives } from "../lib/queries";
+import { extractSSP, mapToObjectives } from "../lib/sspExtract";
 import {
   PencilLine, UploadCloud, FileText, Check, Loader2, ChevronRight,
   Sparkles, AlertCircle, Cloud, HardDrive, X, ChevronDown, FileStack,
@@ -25,7 +27,7 @@ export default function Ingest() {
     const files = Array.from(fileList || []);
     if (!files.length) return;
     const seeded = files.map((f) => ({
-      name: f.name, docType: guessDocType(f.name), text: "", chars: 0, status: "parsing", error: "",
+      name: f.name, docType: guessDocType(f.name), text: "", chars: 0, status: "parsing", error: "", file: f,
     }));
     setDocs((prev) => [...prev, ...seeded]);
     for (let k = 0; k < files.length; k++) {
@@ -74,19 +76,44 @@ export default function Ingest() {
       } catch (e) {}
     }
 
-    // Remaining docs (SSP/other) feed narrative drafting. If the upload was
-    // ONLY policies/procedures, there's nothing to draft — finish here.
+    // Remaining docs (SSP/other) — the SSP already CONTAINS the implementation
+    // narratives in its per-control tables, so extract those directly (no AI
+    // drafting, no truncation). AI drafting only fills controls the SSP misses.
     const narrativeDocs = parsed.filter((x) => x.docType !== "policy" && x.docType !== "procedure" && x.docType !== "plan");
     if (narrativeDocs.length === 0) { setPhase("done"); return; }
-    const corpus = narrativeDocs
-      .map((d) => `### SOURCE: ${d.name} (${d.docType})\n${d.text}`).join("\n\n");
 
-    // Full coverage: draft every assessable control. Run a few in parallel so
-    // hundreds of controls finish in minutes, not one-at-a-time. Failures are
-    // skipped (re-running drafts only what's still missing).
     const allControls = await getAllControlIds();
     setProgress({ done: 0, total: allControls.length });
     let done = 0;
+
+    // 1. Extract real narratives from every SSP-shaped doc.
+    const covered = new Set();
+    for (const d of narrativeDocs) {
+      if (!d.file) continue;
+      let ssp;
+      try { ssp = await extractSSP(d.file); } catch (e) { ssp = null; }
+      if (!ssp) continue;
+      for (const controlId of Object.keys(ssp)) {
+        // fetch this control's objectives, map parts->objectives, save as approved
+        try {
+          const objs = await getObjectivesForControl(controlId, sys.name);
+          if (!objs || objs.length === 0) continue;
+          const pairs = mapToObjectives(ssp[controlId], objs);
+          if (pairs.length) {
+            await saveExtractedNarratives(pairs, sys.name);
+            covered.add(controlId);
+          }
+        } catch (e) { /* keep going */ }
+        done = covered.size;
+        setProgress({ done, total: allControls.length });
+      }
+    }
+
+    // 2. AI-draft ONLY the controls the SSP extraction didn't cover (fallback),
+    //    using the SSP text as source. Skips anything already extracted.
+    const corpus = narrativeDocs
+      .map((d) => `### SOURCE: ${d.name} (${d.docType})\n${d.text}`).join("\n\n");
+    const remaining = allControls.filter((c) => !covered.has(c));
     const CONCURRENCY = 4;
     async function draftOne(controlId) {
       try {
@@ -97,8 +124,7 @@ export default function Ingest() {
       done += 1;
       setProgress({ done, total: allControls.length });
     }
-    // simple worker pool
-    const queue = [...allControls];
+    const queue = [...remaining];
     async function worker() { while (queue.length) { await draftOne(queue.shift()); } }
     await Promise.all(Array.from({ length: CONCURRENCY }, worker));
     setPhase("done");
