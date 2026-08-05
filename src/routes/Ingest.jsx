@@ -5,14 +5,13 @@ import { extractText, guessDocType } from "../lib/parse";
 import { splitIntoSections } from "../lib/splitDoc";
 import { inferFamily, inferControl } from "../lib/inferFamily";
 import { supabase, hasSupabase } from "../lib/supabase";
-import { resolveAssessment, saveGoverningDoc, mapDocToControl } from "../lib/queries";
+import { resolveAssessment, saveGoverningDoc, mapDocToControl, getAllControlIds } from "../lib/queries";
 import {
   PencilLine, UploadCloud, FileText, Check, Loader2, ChevronRight,
   Sparkles, AlertCircle, Cloud, HardDrive, X, ChevronDown, FileStack,
 } from "lucide-react";
 import TemplateList from "../components/TemplateList.jsx";
 
-const SEED_CONTROLS = ["ac-2","ac-3","ac-6","au-2","au-6","cm-2","cm-6","ia-2","ia-5","sc-7","sc-13","si-2","si-4"];
 
 export default function Ingest() {
   const { sys } = useOutletContext();
@@ -81,15 +80,27 @@ export default function Ingest() {
     if (narrativeDocs.length === 0) { setPhase("done"); return; }
     const corpus = narrativeDocs
       .map((d) => `### SOURCE: ${d.name} (${d.docType})\n${d.text}`).join("\n\n");
-    setProgress({ done: 0, total: SEED_CONTROLS.length });
-    for (let i = 0; i < SEED_CONTROLS.length; i++) {
+
+    // Full coverage: draft every assessable control. Run a few in parallel so
+    // hundreds of controls finish in minutes, not one-at-a-time. Failures are
+    // skipped (re-running drafts only what's still missing).
+    const allControls = await getAllControlIds();
+    setProgress({ done: 0, total: allControls.length });
+    let done = 0;
+    const CONCURRENCY = 4;
+    async function draftOne(controlId) {
       try {
         await supabase.functions.invoke("ingest-document", {
-          body: { assessment_id: assessment, control_id: SEED_CONTROLS[i], extracted_text: corpus },
+          body: { assessment_id: assessment, control_id: controlId, extracted_text: corpus },
         });
       } catch (e) { /* keep going */ }
-      setProgress({ done: i + 1, total: SEED_CONTROLS.length });
+      done += 1;
+      setProgress({ done, total: allControls.length });
     }
+    // simple worker pool
+    const queue = [...allControls];
+    async function worker() { while (queue.length) { await draftOne(queue.shift()); } }
+    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
     setPhase("done");
   }
 
