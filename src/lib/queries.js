@@ -390,3 +390,23 @@ export async function getAllControlIds() {
   const ids = [...new Set((data || []).map((r) => r.control_id))].sort();
   return ids;
 }
+
+/* ---- SSP extraction: save real narratives from the SSP tables --------- */
+// Save a batch of extracted narratives as approved, straight from the SSP —
+// no AI drafting. pairs: [{objective_id, text}].
+export async function saveExtractedNarratives(pairs, systemName = "Krome") {
+  if (!hasSupabase) { console.log("mock saveExtractedNarratives", pairs.length); return pairs.length; }
+  const assessment = await resolveAssessment(systemName);
+  if (!assessment) return 0;
+  let saved = 0;
+  // chunk to keep requests modest
+  for (const p of pairs) {
+    if (!p.text || !p.text.trim()) continue;
+    const { error } = await supabase.rpc("edit_narrative", {
+      p_assessment: assessment, p_objective: p.objective_id,
+      p_new_text: p.text, p_editor: "SSP import",
+    });
+    if (!error) saved++;
+  }
+  return saved;
+}

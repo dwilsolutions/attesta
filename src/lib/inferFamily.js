@@ -22,6 +22,17 @@ const FAMILY_HINTS = [
 
 export function inferFamily(nameOrText) {
   const s = (nameOrText || "").toLowerCase();
+  // 1. bare family code as a standalone token: "...FedRAMP AC Policy...", "AU Procedures"
+  //    (the 18 NIST families). Matches the CODE surrounded by non-letters.
+  const codes = ["ac","at","au","ca","cm","cp","ia","ir","ma","mp","pe","pl","ps","ra","sa","sc","si","sr"];
+  const codeMatch = s.match(/(?:^|[^a-z])([a-z]{2})(?:[^a-z]|$)/g);
+  if (codeMatch) {
+    for (const chunk of codeMatch) {
+      const c = chunk.replace(/[^a-z]/g, "");
+      if (codes.includes(c)) return c;
+    }
+  }
+  // 2. fall back to descriptive hints ("access control", "audit", ...)
   for (const [fam, hints] of FAMILY_HINTS) {
     if (hints.some((h) => s.includes(h))) return fam;
   }
