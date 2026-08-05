@@ -4,7 +4,7 @@ import { C, F } from "../lib/theme";
 import {
   Compass, ClipboardList, FileStack, PencilLine, ScanLine, ShieldCheck,
   FileCheck2, Radar, ChevronRight, Circle, CheckCircle2, Lock,
-  Building2, ChevronDown,
+  Building2, ChevronDown, LayoutDashboard,
 } from "lucide-react";
 
 const STAGES = [
@@ -87,6 +87,20 @@ export default function Shell() {
         </div>
 
         <div style={{ padding: "16px 12px 8px", flex: 1, overflowY: "auto" }}>
+          <button onClick={() => nav("/")}
+            style={{ width: "100%", display: "flex", gap: 11, alignItems: "center",
+              padding: "9px 12px", border: "none", borderRadius: 8,
+              background: activeId === "dashboard" ? C.paper : "transparent",
+              cursor: "pointer", textAlign: "left", marginBottom: 12 }}>
+            <div style={{ width: 22, height: 22, borderRadius: 6,
+              background: activeId === "dashboard" ? C.seal : C.panel,
+              border: `2px solid ${activeId === "dashboard" ? C.seal : C.line}`,
+              display: "grid", placeItems: "center" }}>
+              <LayoutDashboard size={11} style={{ color: activeId === "dashboard" ? "#fff" : C.muted }} />
+            </div>
+            <span style={{ fontSize: 13.5, fontWeight: activeId === "dashboard" ? 600 : 500 }}>Dashboard</span>
+          </button>
+
           <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".08em",
             textTransform: "uppercase", color: C.faint, padding: "0 12px 10px" }}>
             Compliance journey
