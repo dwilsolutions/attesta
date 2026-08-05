@@ -27,3 +27,17 @@ export function inferFamily(nameOrText) {
   }
   return null;
 }
+
+// Infer a specific CONTROL id from a doc name, e.g. "AC-2 Policy" -> "ac-2",
+// "AC-17(1) Procedure" -> "ac-17.1". Returns null if no control id is present
+// (then the caller can fall back to family-level or ask).
+export function inferControl(nameOrText) {
+  const s = (nameOrText || "");
+  // match AC-2, AC-02, AC-2(1), AC-17.1, ac-2, etc.
+  const m = s.match(/\b([A-Za-z]{2})[-\s]?0*(\d{1,2})(?:\s*\(\s*0*(\d{1,2})\s*\)|\.(\d{1,2}))?/);
+  if (!m) return null;
+  const fam = m[1].toLowerCase();
+  const num = parseInt(m[2], 10);
+  const enh = m[3] || m[4];
+  return `${fam}-${num}` + (enh ? `.${parseInt(enh, 10)}` : "");
+}

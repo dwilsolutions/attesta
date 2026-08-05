@@ -355,3 +355,13 @@ export async function getDashboardStats(systemName = "Krome") {
   if (error) { console.error("dashboard_stats", error); return empty; }
   return { ...empty, ...(data || {}) };
 }
+
+
+// Map every section of a doc to a single control (no AI, no spread).
+export async function mapDocToControl(docId, controlId) {
+  if (!hasSupabase) { console.log("mock mapDocToControl", docId, controlId); return; }
+  const { error } = await supabase.rpc("map_doc_to_control", {
+    p_doc: docId, p_control: controlId,
+  });
+  if (error) { console.error("map_doc_to_control", error); throw error; }
+}
