@@ -1,5 +1,6 @@
 import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
+import Dashboard from "./routes/Dashboard";
 import { useAuth } from "./components/AuthProvider.jsx";
 import { AuthProvider } from "./components/AuthProvider.jsx";
 import Login from "./routes/Login.jsx";
@@ -24,7 +25,8 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/onboard" element={<Guard><Onboarding /></Guard>} />
         <Route path="/" element={<Guard><Shell /></Guard>}>
-          <Route index element={<Review />} />
+          <Route index element={<Dashboard />} />
+          <Route path="dashboard" element={<Dashboard />} />
           <Route path="templates" element={<Templates />} />
           <Route path="complete-docs" element={<Ingest />} />
           <Route path="review" element={<Review />} />
