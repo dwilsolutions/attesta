@@ -339,3 +339,19 @@ export async function getSarForControl(controlId) {
   if (error) { console.error("sar_for_control", error); return []; }
   return data || [];
 }
+
+/* ---- dashboard ------------------------------------------------------ */
+export async function getDashboardStats(systemName = "Krome") {
+  const empty = {
+    objectives: { total: 0, satisfied: 0, partial: 0, gap: 0 },
+    controls: { total: 0, satisfied: 0 },
+    buckets: { missing_evidence: 0, missing_narrative: 0 },
+    conflicts: 0, families: [], attention: [],
+  };
+  if (!hasSupabase) return empty;
+  const assessment = await resolveAssessment(systemName);
+  if (!assessment) return empty;
+  const { data, error } = await supabase.rpc("dashboard_stats", { p_assessment: assessment });
+  if (error) { console.error("dashboard_stats", error); return empty; }
+  return { ...empty, ...(data || {}) };
+}
