@@ -1,6 +1,7 @@
 import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import Dashboard from "./routes/Dashboard";
+import FinalDocs from "./routes/FinalDocs";
 import { useAuth } from "./components/AuthProvider.jsx";
 import { AuthProvider } from "./components/AuthProvider.jsx";
 import Login from "./routes/Login.jsx";
@@ -31,6 +32,7 @@ export default function App() {
           <Route path="complete-docs" element={<Ingest />} />
           <Route path="review" element={<Review />} />
           <Route path="review/:family" element={<Family />} />
+          <Route path="final-docs" element={<FinalDocs />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
