@@ -6,6 +6,7 @@ import {
   reviewEvidence, linkEvidence, getEvidenceForControl, resolveAssessment, getLinkedUrls,
   unlinkEvidence, editNarrative, removeNarrative, getNarratives,
   getGoverningDocs, editGoverningSection, setGoverningStatus,
+  getDocsForControl, getSarForControl,
   runReconcile, getReconciliation,
 } from "../../lib/queries";
 import {
@@ -38,6 +39,7 @@ export default function Family() {
   const [evidence, setEvidence] = useState({}); // objective_id -> [artifacts]
   const [narratives, setNarratives] = useState({}); // objective_id -> approved text
   const [govDocs, setGovDocs] = useState([]);
+  const [sarRows, setSarRows] = useState([]);
   const [recon, setRecon] = useState(null);
   const [reconBusy, setReconBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -53,14 +55,14 @@ export default function Family() {
 
   const loadControl = useCallback(async () => {
     if (!openControl) { setObjs([]); setProposals({}); setEvidence({}); return; }
-    const isDashOne = /-1$/.test(openControl);
-    const [o, props, ev, narrs, gdocs, rec] = await Promise.all([
+    const [o, props, ev, narrs, cdocs, rec, sar] = await Promise.all([
       getObjectivesForControl(openControl, sys.name),
       getProposals(openControl, sys.name),
       getEvidenceForControl(openControl, sys.name),
       getNarratives(openControl, sys.name),
-      isDashOne ? getGoverningDocs(family, sys.name) : Promise.resolve([]),
+      getDocsForControl(openControl, sys.name),
       getReconciliation(openControl, sys.name),
+      getSarForControl(openControl),
     ]);
     setObjs(o);
     const byObj = {}; (props || []).forEach((p) => { byObj[p.objective_id] = p; });
@@ -69,8 +71,12 @@ export default function Family() {
     (ev || []).forEach((e) => { (evByObj[e.objective_id] ||= []).push(e); });
     setEvidence(evByObj);
     setNarratives(narrs || {});
-    setGovDocs(gdocs || []);
+    setGovDocs(cdocs || []);
     setRecon(rec || null);
+    // index SAR rows by normalized objective suffix for per-objective display
+    const sarByObj = {};
+    (sar || []).forEach((r) => { sarByObj[r.procedure_id] = r; });
+    setSarRows(sar || []);
   }, [openControl, sys.name]);
 
   useEffect(() => { loadControl(); }, [loadControl]);
@@ -124,30 +130,19 @@ export default function Family() {
           })}
         </div>
 
-        <div style={{ padding: "24px 40px", maxWidth: 820 }}>
-          {openControl ? (
-            <EvidencePanel control={openControl} sys={sys} onLinked={loadControl} />
-          ) : null}
-
-          {openControl && /-1$/.test(openControl) && (
-            <GoverningDocs docs={govDocs} reload={loadControl} />
+        <div style={{ padding: "24px 40px", maxWidth: 860 }}>
+          {openControl && (
+            <ControlBox
+              control={openControl}
+              controlTitle={(controls.find((c) => c.control_id === openControl) || {}).title}
+              satisfied={(controls.find((c) => c.control_id === openControl) || {}).satisfied}
+              total={(controls.find((c) => c.control_id === openControl) || {}).objectives}
+              recon={recon} reconBusy={reconBusy} onReconcile={onReconcile}
+              docs={govDocs} sarRows={sarRows}
+              objs={objs} proposals={proposals} evidence={evidence} narratives={narratives}
+              onAccept={onAccept} sys={sys} reload={loadControl}
+            />
           )}
-
-          {openControl && <ReconcilePanel control={openControl} recon={recon} busy={reconBusy} onRun={onReconcile} />}
-
-          <div style={{ fontSize: 12, fontFamily: F.mono, color: C.faint, margin: "26px 0 6px",
-            textTransform: "uppercase", letterSpacing: ".05em" }}>
-            Determination statements · {openControl}
-          </div>
-          <p style={{ fontSize: 13.5, color: C.muted, margin: "0 0 18px", lineHeight: 1.5 }}>
-            Each objective is reviewed independently. Narrative + evidence together mark it satisfied.
-          </p>
-
-          {objs.map((o) => (
-            <ObjectiveCard key={o.objective_id} o={o} proposal={proposals[o.objective_id]}
-              evidence={evidence[o.objective_id]} approvedText={narratives[o.objective_id]}
-              onAccept={onAccept} sys={sys} reload={loadControl} />
-          ))}
         </div>
       </div>
     </div>
@@ -155,7 +150,7 @@ export default function Family() {
 }
 
 /* ---------------- evidence panel (per control) ---------------- */
-function EvidencePanel({ control, sys, onLinked }) {
+function EvidencePanel({ control, sys, onLinked, compact }) {
   const [open, setOpen] = useState(false);
   const [urls, setUrls] = useState("");
   const [title, setTitle] = useState("");
@@ -221,16 +216,19 @@ function EvidencePanel({ control, sys, onLinked }) {
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} style={{ display: "flex", alignItems: "center", gap: 8,
-        background: C.sealSoft, border: `1px solid ${C.seal}`, borderRadius: 10, padding: "11px 16px",
-        cursor: "pointer", fontFamily: F.body, fontSize: 13.5, fontWeight: 600, color: C.sealDk }}>
-        <Link2 size={16} /> Link evidence for {(control||"").toUpperCase()}
+      <button onClick={() => setOpen(true)} style={{ display: "flex", alignItems: "center", gap: 6,
+        background: compact ? C.panel : C.sealSoft, border: `1px solid ${C.seal}`, borderRadius: 8,
+        padding: compact ? "5px 11px" : "11px 16px", cursor: "pointer", fontFamily: F.body,
+        fontSize: compact ? 12 : 13.5, fontWeight: 600, color: C.sealDk }}>
+        <Link2 size={compact ? 13 : 16} /> {compact ? "Link evidence" : `Link evidence for ${(control||"").toUpperCase()}`}
       </button>
     );
   }
 
   return (
-    <div style={{ border: `1.5px solid ${C.seal}`, borderRadius: 13, background: "#F4FAF9", padding: "18px 20px" }}>
+    <div style={{ border: `1.5px solid ${C.seal}`, borderRadius: 13, background: "#F4FAF9", padding: "18px 20px",
+      ...(compact ? { position: "absolute", right: 40, marginTop: 6, width: 620, zIndex: 20,
+        boxShadow: "0 8px 30px rgba(0,0,0,0.12)" } : {}) }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
         <Link2 size={16} style={{ color: C.seal }} />
         <span style={{ fontSize: 14.5, fontWeight: 600 }}>Link evidence for {(control||"").toUpperCase()}</span>
@@ -764,4 +762,389 @@ function VerdictBlock({ title, verdict, body, children }) {
       {children}
     </div>
   );
+}
+
+/* ===================================================================
+   UNIFIED CONTROL BOX — one container: reconcile + this control's
+   documents + per-objective 7-layer stacks. Replaces the scattered view.
+   =================================================================== */
+const PANEL2 = "#F6F3EC";
+const CLAIMSOFT = "#FAF1DD";
+const DANGER = "#B4402F";
+
+// Normalize a control id + objective suffix so SAR rows line up with objectives.
+// SAR procedure_id like 'AC-02j.' ; objective_id like 'ac-2_obj.j'
+function sarForObjective(sarRows, objectiveId) {
+  if (!sarRows || !objectiveId) return null;
+  const m = objectiveId.match(/_obj\.(.+)$/);
+  if (!m) return null;
+  const suffix = m[1].toLowerCase().replace(/\./g, "");
+  // find a SAR row whose procedure suffix matches
+  return sarRows.find((r) => {
+    const pm = (r.procedure_id || "").match(/^[A-Z]{2}-\d+(.*)$/);
+    if (!pm) return false;
+    const psuffix = pm[1].toLowerCase().replace(/[^a-z0-9]/g, "");
+    return psuffix === suffix || psuffix.startsWith(suffix);
+  }) || null;
+}
+
+function ControlBox({ control, controlTitle, satisfied, total, recon, reconBusy, onReconcile,
+  docs, sarRows, objs, proposals, evidence, narratives, onAccept, sys, reload }) {
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+        <span style={{ fontFamily: F.mono, fontSize: 13, color: C.sealDk, background: C.sealSoft,
+          padding: "2px 9px", borderRadius: 20, textTransform: "uppercase" }}>{control}</span>
+        <span style={{ fontSize: 19, fontWeight: 500 }}>{controlTitle}</span>
+        {total > 0 && <span style={{ marginLeft: "auto", fontFamily: F.mono, fontSize: 12, color: C.muted }}>
+          {satisfied} / {total} satisfied</span>}
+      </div>
+      <p style={{ fontSize: 13, color: C.muted, margin: "0 0 18px" }}>
+        Everything for this control in one place — reconcile, its documents, and each objective's full stack.
+      </p>
+
+      <div style={{ border: `1.5px solid ${C.line}`, borderRadius: 14, background: C.panel, overflow: "hidden" }}>
+        {/* 1 · reconcile */}
+        <div style={{ borderBottom: `1px solid ${C.line}` }}>
+          <ReconcilePanelInline control={control} recon={recon} busy={reconBusy} onRun={onReconcile} />
+        </div>
+
+        {/* 2 · this control's documents */}
+        <div style={{ borderBottom: `1px solid ${C.line}`, padding: "16px 18px" }}>
+          <div style={{ fontFamily: F.mono, fontSize: 11, color: C.faint, textTransform: "uppercase",
+            letterSpacing: ".05em", marginBottom: 10, display: "flex", alignItems: "center", gap: 7 }}>
+            <FileStack size={13} /> {control.toUpperCase()} documents
+          </div>
+          <ControlDocs docs={docs} reload={reload} />
+        </div>
+
+        {/* 3 · objectives */}
+        <div style={{ padding: "16px 18px" }}>
+          <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontFamily: F.mono, fontSize: 11, color: C.faint, textTransform: "uppercase",
+              letterSpacing: ".05em", display: "flex", alignItems: "center", gap: 7 }}>
+              <BadgeCheck size={13} /> Objectives · {objs.length} total
+            </div>
+            <div style={{ marginLeft: "auto" }}>
+              <EvidencePanel control={control} sys={sys} onLinked={reload} compact />
+            </div>
+          </div>
+          {objs.map((o) => (
+            <ObjectiveStack key={o.objective_id} o={o}
+              proposal={proposals[o.objective_id]} evidence={evidence[o.objective_id]}
+              approvedText={narratives[o.objective_id]} sar={sarForObjective(sarRows, o.objective_id)}
+              onAccept={onAccept} sys={sys} reload={reload} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* documents for this control (policy/procedure/plan, via section mapping) */
+function ControlDocs({ docs, reload }) {
+  if (!docs || docs.length === 0) {
+    return (
+      <div style={{ fontSize: 12.5, color: C.muted, display: "flex", alignItems: "center", gap: 8,
+        padding: "6px 0" }}>
+        <FileStack size={15} style={{ color: C.faint }} />
+        No policy or procedure text mapped to this control yet. Upload docs in Complete Docs —
+        Attesta splits them and maps each section to the controls it addresses.
+      </div>
+    );
+  }
+  return <>{docs.map((d) => <ControlDoc key={d.doc_id} doc={d} reload={reload} />)}</>;
+}
+
+function ControlDoc({ doc, reload }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, background: PANEL2,
+      marginBottom: 8, overflow: "hidden" }}>
+      <div onClick={() => setOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 9,
+        padding: "11px 13px", cursor: "pointer", background: open ? C.sealSoft : "transparent" }}>
+        <ChevronDown size={15} style={{ color: C.faint, transform: open ? "none" : "rotate(-90deg)", transition: ".15s" }} />
+        <span style={{ fontFamily: F.mono, fontSize: 10, color: C.sealDk, background: open ? C.panel : C.sealSoft,
+          padding: "2px 8px", borderRadius: 20, textTransform: "uppercase" }}>{doc.doc_type}</span>
+        <span style={{ fontSize: 13.5, fontWeight: 500 }}>{doc.title}</span>
+        <span style={{ marginLeft: "auto", fontSize: 11.5, color: C.muted }}>{doc.sections.length} section{doc.sections.length !== 1 ? "s" : ""}</span>
+      </div>
+      {open && (
+        <div style={{ padding: "2px 13px 12px" }}>
+          {doc.sections.map((sec) => <ControlDocSection key={sec.section_id} sec={sec} reload={reload} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ControlDocSection({ sec, reload }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(sec.body_text || "");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setText(sec.body_text || ""); }, [sec.section_id]);
+  async function save() {
+    setBusy(true);
+    try { await editGoverningSection(sec.section_id, text); await reload(); setEditing(false); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div style={{ borderTop: `1px solid ${C.line}`, padding: "9px 0" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 600 }}>{sec.heading}</span>
+        {sec.confidence && sec.confidence !== "high" && (
+          <span style={{ fontFamily: F.mono, fontSize: 9.5, color: C.claim, background: CLAIMSOFT,
+            padding: "1px 6px", borderRadius: 20, textTransform: "uppercase" }}>{sec.confidence} match</span>
+        )}
+        {!editing && (
+          <button onClick={() => setEditing(true)} style={{ marginLeft: "auto", background: "none",
+            border: "none", cursor: "pointer", color: C.seal, fontSize: 11.5, fontFamily: F.body,
+            display: "flex", alignItems: "center", gap: 5 }}><Pencil size={12} /> Edit</button>
+        )}
+      </div>
+      {editing ? (
+        <>
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4}
+            style={{ ...inputS, width: "100%", lineHeight: 1.5, resize: "vertical", marginTop: 6 }} />
+          <div style={{ display: "flex", gap: 8, marginTop: 7 }}>
+            <button onClick={save} disabled={busy} style={{ display: "flex", alignItems: "center", gap: 6,
+              background: C.seal, color: "#fff", border: "none", padding: "6px 12px", borderRadius: 7,
+              fontFamily: F.body, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              {busy ? <Loader2 size={12} className="spin" /> : <Save size={12} />} Save</button>
+            <button onClick={() => { setEditing(false); setText(sec.body_text || ""); }}
+              style={{ background: C.panel, color: C.ink, border: `1px solid ${C.line}`, padding: "6px 12px",
+                borderRadius: 7, fontFamily: F.body, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.5, marginTop: 4, whiteSpace: "pre-wrap" }}>
+          {text || <span style={{ fontStyle: "italic", color: C.faint }}>Empty section</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* one objective as a labeled 7-layer stack; satisfied ones collapse to a line */
+function ObjectiveStack({ o, proposal, evidence, approvedText, sar, onAccept, sys, reload }) {
+  const hasEvidence = evidence && evidence.length > 0;
+  const satisfied = o.coverage === "satisfied";
+  const [open, setOpen] = useState(!satisfied);
+  const [editingNarr, setEditingNarr] = useState(false);
+  const [narrText, setNarrText] = useState(approvedText || "");
+  const [narrBusy, setNarrBusy] = useState(false);
+  const [evBusy, setEvBusy] = useState(false);
+  useEffect(() => { setNarrText(approvedText || ""); }, [approvedText]);
+
+  const status = satisfied
+    ? { c: C.seal, Icon: CircleCheck2, label: "Satisfied" }
+    : o.coverage === "partial"
+    ? { c: C.claim, Icon: AlertTriangle, label: "Partial" }
+    : { c: C.faint, Icon: null, label: "Gap" };
+
+  async function saveNarr() {
+    setNarrBusy(true);
+    try { await editNarrative(o.objective_id, narrText, "duane.wilson@eccalon.com", sys.name); await reload(); setEditingNarr(false); }
+    finally { setNarrBusy(false); }
+  }
+  async function unlink(artifactId) {
+    setEvBusy(true);
+    try { await unlinkEvidence(o.objective_id, artifactId, sys.name); await reload(); } finally { setEvBusy(false); }
+  }
+
+  if (!open) {
+    return (
+      <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, background: C.panel, marginBottom: 8 }}>
+        <div onClick={() => setOpen(true)} style={{ display: "flex", alignItems: "center", gap: 8,
+          padding: "11px 13px", cursor: "pointer" }}>
+          <span style={{ fontFamily: F.mono, fontSize: 12, color: C.sealDk, fontWeight: 600 }}>{o.objective_id}</span>
+          <span style={{ fontSize: 12.5, color: C.muted, overflow: "hidden", textOverflow: "ellipsis",
+            whiteSpace: "nowrap", maxWidth: 420 }}>{o.statement}</span>
+          <span style={{ marginLeft: "auto", fontSize: 12, color: status.c, display: "flex", alignItems: "center", gap: 4 }}>
+            {status.Icon && <status.Icon size={14} />} {status.label}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ border: `1px solid ${satisfied ? C.line : C.seal}`, borderRadius: 10,
+      background: C.panel, marginBottom: 8, overflow: "hidden" }}>
+      <div onClick={() => setOpen(false)} style={{ display: "flex", alignItems: "center", gap: 8,
+        padding: "11px 13px", cursor: "pointer", background: C.sealSoft }}>
+        <span style={{ fontFamily: F.mono, fontSize: 12, color: C.sealDk, fontWeight: 600 }}>{o.objective_id}</span>
+        <span style={{ marginLeft: "auto", fontSize: 12, color: status.c, display: "flex", alignItems: "center", gap: 4 }}>
+          {status.Icon && <status.Icon size={14} />} {status.label}
+        </span>
+      </div>
+
+      <div style={{ padding: "4px 13px 12px" }}>
+        {/* 1 · NIST */}
+        <Layer n="1" label="NIST 800-53 standard" accent>
+          <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>{o.statement}</div>
+        </Layer>
+
+        {/* 2 · FedRAMP SAR */}
+        <Layer n="2" label="FedRAMP SAR requirement" sar>
+          {sar ? (
+            <>
+              <div style={{ fontSize: 12.5, lineHeight: 1.5, color: C.sealDk }}>{sar.objective}</div>
+              <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                {sar.parameter && <span style={{ fontFamily: F.mono, fontSize: 10, color: C.sealDk,
+                  background: C.panel, padding: "1px 7px", borderRadius: 20 }}>param: {sar.parameter}</span>}
+                {(sar.test_method || "").split(/,\s*/).filter(Boolean).map((m) => (
+                  <span key={m} style={{ fontFamily: F.mono, fontSize: 10, color: C.muted,
+                    border: `1px solid ${C.line}`, padding: "1px 7px", borderRadius: 20, textTransform: "uppercase" }}>{m}</span>
+                ))}
+              </div>
+              {sar.addl_fedramp && <div style={{ fontSize: 11.5, color: C.claim, marginTop: 5 }}>
+                + FedRAMP: {sar.addl_fedramp}</div>}
+            </>
+          ) : (
+            <div style={{ fontSize: 12, color: C.faint, fontStyle: "italic" }}>No SAR procedure mapped to this objective.</div>
+          )}
+        </Layer>
+
+        {/* 3 · Draft SSP statement */}
+        <Layer n="3" label="Draft SSP statement" action={
+          o.narrative_approved && !editingNarr
+            ? <button onClick={() => { setEditingNarr(true); setNarrText(approvedText || ""); }}
+                style={miniBtn}><Pencil size={11} /> Edit</button>
+            : null
+        }>
+          {editingNarr ? (
+            <>
+              <textarea value={narrText} onChange={(e) => setNarrText(e.target.value)} rows={4}
+                style={{ ...inputS, width: "100%", lineHeight: 1.5, resize: "vertical" }} />
+              <div style={{ display: "flex", gap: 8, marginTop: 7 }}>
+                <button onClick={saveNarr} disabled={narrBusy || !narrText.trim()} style={{ display: "flex",
+                  alignItems: "center", gap: 6, background: C.seal, color: "#fff", border: "none",
+                  padding: "6px 12px", borderRadius: 7, fontFamily: F.body, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                  {narrBusy ? <Loader2 size={12} className="spin" /> : <Save size={12} />} Save</button>
+                <button onClick={() => setEditingNarr(false)} style={{ background: C.panel, color: C.ink,
+                  border: `1px solid ${C.line}`, padding: "6px 12px", borderRadius: 7, fontFamily: F.body,
+                  fontSize: 12, cursor: "pointer" }}>Cancel</button>
+              </div>
+            </>
+          ) : approvedText ? (
+            <div style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.5 }}>{approvedText}</div>
+          ) : proposal ? (
+            <div>
+              <div style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.5, marginBottom: 8 }}>{proposal.draft_text}</div>
+              <button onClick={() => onAccept(proposal, proposal.draft_text)} style={{ display: "flex",
+                alignItems: "center", gap: 6, background: C.seal, color: "#fff", border: "none",
+                padding: "6px 12px", borderRadius: 7, fontFamily: F.body, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                <Check size={12} /> Approve draft</button>
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: C.faint, fontStyle: "italic" }}>No narrative yet — draft from Complete Docs.</div>
+          )}
+        </Layer>
+
+        {/* 4 · Evidence */}
+        <Layer n="4" label="Evidence">
+          {hasEvidence ? evidence.map((e) => (
+            <div key={e.artifact_id} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, marginTop: 3 }}>
+              {e.artifact_type === "screenshot" || e.artifact_type === "diagram"
+                ? <ImageIcon size={13} style={{ color: C.seal }} />
+                : <Paperclip size={13} style={{ color: C.seal }} />}
+              <a href={e.url} target="_blank" rel="noreferrer" style={{ fontWeight: 500, color: C.ink,
+                textDecoration: "none" }}>{e.title}</a>
+              {e.artifact_type && <span style={{ fontFamily: F.mono, fontSize: 10, color: C.sealDk,
+                background: C.sealSoft, padding: "1px 6px", borderRadius: 20 }}>{e.artifact_type.replace("_", " ")}</span>}
+              <span style={{ fontFamily: F.mono, fontSize: 10, color: C.muted, border: `1px solid ${C.line}`,
+                padding: "1px 6px", borderRadius: 20, textTransform: "uppercase" }}>{e.method}</span>
+              <button onClick={() => unlink(e.artifact_id)} disabled={evBusy} style={{ ...miniBtn, marginLeft: "auto" }}>Unlink</button>
+            </div>
+          )) : (
+            <div style={{ fontSize: 12, color: C.faint, fontStyle: "italic" }}>No evidence linked.</div>
+          )}
+        </Layer>
+      </div>
+    </div>
+  );
+}
+
+const miniBtn = {
+  border: `1px solid ${C.line}`, background: C.panel, borderRadius: 7, padding: "2px 9px",
+  fontFamily: F.body, fontSize: 11, cursor: "pointer", color: C.ink,
+  display: "inline-flex", alignItems: "center", gap: 4,
+};
+
+function Layer({ n, label, accent, sar, action, children }) {
+  return (
+    <div style={{ borderLeft: `2px solid ${accent || sar ? C.seal : C.line}`,
+      background: sar ? C.sealSoft : "transparent", padding: "7px 0 7px 11px", marginTop: 9,
+      paddingRight: sar ? 11 : 0, borderRadius: sar ? "0 6px 6px 0" : 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+        <span style={{ fontFamily: F.mono, fontSize: 10, color: sar ? C.sealDk : C.muted,
+          textTransform: "uppercase", letterSpacing: ".04em" }}>{n} · {label}</span>
+        {action && <span style={{ marginLeft: "auto" }}>{action}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/* reconcile, restyled to sit flush inside the box top */
+function ReconcilePanelInline({ control, recon, busy, onRun }) {
+  const req = recon?.requirements, con = recon?.consistency, imp = recon?.improvements || [];
+  const has = !!recon;
+  return (
+    <div style={{ background: C.sealSoft, padding: "14px 18px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Scale size={17} style={{ color: C.sealDk }} />
+        <span style={{ fontWeight: 600, fontSize: 14, color: C.sealDk }}>Reconcile {(control || "").toUpperCase()}</span>
+        {has && req && <Pill tone={req.verdict === "met" ? "ok" : "warn"}>requirements: {req.verdict}</Pill>}
+        {has && con && <Pill tone={con.verdict === "consistent" ? "ok" : "warn"}>
+          {con.verdict === "consistent" ? "consistent" : `${(con.issues || []).length} conflict${(con.issues||[]).length!==1?"s":""}`}</Pill>}
+        {has && <Pill tone="info">{imp.length} suggestion{imp.length !== 1 ? "s" : ""}</Pill>}
+        <button onClick={onRun} disabled={busy} style={{ marginLeft: "auto", display: "flex",
+          alignItems: "center", gap: 6, background: C.seal, color: "#fff", border: "none",
+          padding: "7px 13px", borderRadius: 8, fontFamily: F.body, fontSize: 12.5, fontWeight: 600,
+          cursor: busy ? "default" : "pointer" }}>
+          {busy ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} {has ? "Re-run" : "Reconcile"}
+        </button>
+      </div>
+
+      {busy && !has && <div style={{ fontSize: 12.5, color: C.sealDk, marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
+        <Loader2 size={13} className="spin" /> Reading every document for this control…</div>}
+
+      {has && (
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          {req?.detail && <div style={{ fontSize: 12.5, color: C.sealDk, lineHeight: 1.5 }}>{req.detail}</div>}
+          {con?.issues?.length > 0 && con.issues.map((iss, i) => (
+            <div key={i} style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+              <span style={{ fontFamily: F.mono, fontSize: 10.5, color: C.claim, background: CLAIMSOFT,
+                padding: "1px 7px", borderRadius: 20 }}>{iss.between}</span>
+              <span style={{ color: C.ink, marginLeft: 8 }}>{iss.problem}</span>
+            </div>
+          ))}
+          {imp.length > 0 && (
+            <div style={{ border: `1px solid ${C.line}`, borderRadius: 9, background: C.panel, padding: "11px 13px" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                <Lightbulb size={13} style={{ color: C.claim }} /> Suggested improvements</div>
+              {imp.map((s2, i) => (
+                <div key={i} style={{ borderTop: i ? `1px solid ${C.line}` : "none", paddingTop: i ? 9 : 0, marginTop: i ? 9 : 0 }}>
+                  <div style={{ fontFamily: F.mono, fontSize: 10.5, color: C.seal, marginBottom: 5 }}>{s2.layer}</div>
+                  <div style={{ fontSize: 12, color: C.ink, background: "#FBEAE6", borderRadius: 6, padding: "6px 9px", marginBottom: 6, lineHeight: 1.45 }}>{s2.original}</div>
+                  <div style={{ fontSize: 12, color: C.ink, background: C.sealSoft, borderRadius: 6, padding: "6px 9px", marginBottom: 5, lineHeight: 1.45 }}>{s2.improved}</div>
+                  <div style={{ fontSize: 11.5, color: C.muted, fontStyle: "italic" }}>{s2.why}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {recon.ran_at && <div style={{ fontSize: 10.5, color: C.faint, fontFamily: F.mono, textAlign: "right" }}>
+            last run {new Date(recon.ran_at).toLocaleString()}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Pill({ tone, children }) {
+  const styles = tone === "ok" ? { c: C.sealDk, bg: C.panel } : tone === "warn"
+    ? { c: C.claim, bg: CLAIMSOFT } : { c: C.sealDk, bg: C.panel };
+  return <span style={{ fontSize: 12, padding: "2px 10px", borderRadius: 20, color: styles.c, background: styles.bg }}>{children}</span>;
 }
