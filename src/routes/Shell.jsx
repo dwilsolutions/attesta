@@ -14,7 +14,7 @@ const STAGES = [
   { id: "fill",      label: "Complete Docs",         blurb: "Upload & draft narratives",        icon: PencilLine,    state: "active", route: "/complete-docs" },
   { id: "evidence",  label: "Evidence Collection",   blurb: "Agent gathers artifacts",         icon: ScanLine,      state: "done" },
   { id: "review",    label: "Review & Reconcile",    blurb: "Confirm claims are backed",       icon: ShieldCheck,   state: "active", route: "/review" },
-  { id: "produce",   label: "Final Documentation",   blurb: "Assessment-ready package",        icon: FileCheck2,    state: "locked" },
+  { id: "produce",   label: "Final Documentation",   blurb: "Assessment-ready package",        icon: FileCheck2,    state: "active", route: "/final-docs" },
   { id: "monitor",   label: "Continuous Monitoring", blurb: "Watch evidence & intervals",      icon: Radar,         state: "locked" },
 ];
 
@@ -37,7 +37,8 @@ export default function Shell() {
   const done = STAGES.filter((s) => s.state === "done").length;
   const activeId = loc.pathname.startsWith("/complete-docs") ? "fill"
     : loc.pathname.startsWith("/templates") ? "templates"
-    : loc.pathname.startsWith("/review") ? "review" : "dashboard";
+    : loc.pathname.startsWith("/review") ? "review"
+    : loc.pathname.startsWith("/final-docs") ? "produce" : "dashboard";
 
   return (
     <div style={{ fontFamily: F.body, color: C.ink, background: C.paper,
