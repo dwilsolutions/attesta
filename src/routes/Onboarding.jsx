@@ -27,6 +27,7 @@ export default function Onboarding() {
 
 /* ---------------- shared chrome ---------------- */
 function Shell({ children, step, total }) {
+  const nav = useNavigate();
   return (
     <div style={{ fontFamily: F.body, color: C.ink, background: C.paper,
       minHeight: "100vh", display: "flex", flexDirection: "column" }}>
