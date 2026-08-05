@@ -32,11 +32,14 @@ function Shell({ children, step, total }) {
       minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <div style={{ padding: "18px 28px", borderBottom: `1px solid ${C.line}`, background: C.panel,
         display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ width: 26, height: 26, borderRadius: 6, background: C.seal,
-          display: "grid", placeItems: "center" }}>
-          <ShieldCheck size={16} color="#fff" />
+        <div onClick={() => nav("/")} title="Back to dashboard"
+          style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+          <div style={{ width: 26, height: 26, borderRadius: 6, background: C.seal,
+            display: "grid", placeItems: "center" }}>
+            <ShieldCheck size={16} color="#fff" />
+          </div>
+          <span style={{ fontFamily: F.display, fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em" }}>Attesta</span>
         </div>
-        <span style={{ fontFamily: F.display, fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em" }}>Attesta</span>
         <span style={{ marginLeft: 12, fontSize: 12, fontFamily: F.mono, color: C.faint,
           borderLeft: `1px solid ${C.line}`, paddingLeft: 12 }}>Stage 01 · Onboarding</span>
       </div>
