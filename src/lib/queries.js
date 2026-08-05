@@ -365,3 +365,15 @@ export async function mapDocToControl(docId, controlId) {
   });
   if (error) { console.error("map_doc_to_control", error); throw error; }
 }
+
+/* ---- final package -------------------------------------------------- */
+export async function getPackageData(controlId = null, systemName = "Krome") {
+  if (!hasSupabase) return [];
+  const assessment = await resolveAssessment(systemName);
+  if (!assessment) return [];
+  const { data, error } = await supabase.rpc("package_data", {
+    p_assessment: assessment, p_control: controlId,
+  });
+  if (error) { console.error("package_data", error); return []; }
+  return data || [];
+}
