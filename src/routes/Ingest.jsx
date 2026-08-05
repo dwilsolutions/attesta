@@ -3,9 +3,9 @@ import { useOutletContext, useNavigate } from "react-router-dom";
 import { C, F } from "../lib/theme";
 import { extractText, guessDocType } from "../lib/parse";
 import { splitIntoSections } from "../lib/splitDoc";
-import { inferFamily } from "../lib/inferFamily";
+import { inferFamily, inferControl } from "../lib/inferFamily";
 import { supabase, hasSupabase } from "../lib/supabase";
-import { resolveAssessment, saveGoverningDoc, tagSections } from "../lib/queries";
+import { resolveAssessment, saveGoverningDoc, mapDocToControl } from "../lib/queries";
 import {
   PencilLine, UploadCloud, FileText, Check, Loader2, ChevronRight,
   Sparkles, AlertCircle, Cloud, HardDrive, X, ChevronDown, FileStack,
@@ -58,16 +58,20 @@ export default function Ingest() {
     setPhase("drafting");
     const assessment = await resolveAssessment(sys.name);
 
-    // Policies & procedures are the -1 controls: split by heading + save as
-    // governing docs rather than drafting objective narratives from them.
+    // Policies & procedures map to the control named in the document, and ONLY
+    // that control — no cross-pollination to sibling controls. Derive the control
+    // from the doc name (e.g. "AC-2 Policy" -> ac-2); fall back to the family's
+    // -1 control if the name gives only a family (e.g. "Access Control Policy" -> ac-1).
     for (const d of parsed.filter((x) => x.docType === "policy" || x.docType === "procedure" || x.docType === "plan")) {
       const family = inferFamily(d.name) || inferFamily(d.text);
-      if (!family) continue; // can't place it; leave for manual handling
+      const control = inferControl(d.name) || (family ? `${family}-1` : null);
+      if (!control) continue; // can't place it; leave for manual handling
+      const fam = control.split("-")[0];
       const sections = splitIntoSections(d.text);
       const title = d.name.replace(/\.[a-z0-9]+$/i, "").replace(/_/g, " ");
       try {
-        const docId = await saveGoverningDoc(family, d.docType, title, sections, sys.name);
-        if (docId) await tagSections(docId, family); // map each section to its controls
+        const docId = await saveGoverningDoc(fam, d.docType, title, sections, sys.name);
+        if (docId) await mapDocToControl(docId, control); // all sections -> this one control
       } catch (e) {}
     }
 
