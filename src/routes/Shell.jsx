@@ -36,7 +36,8 @@ export default function Shell() {
   const [open, setOpen] = useState(false);
   const done = STAGES.filter((s) => s.state === "done").length;
   const activeId = loc.pathname.startsWith("/complete-docs") ? "fill"
-    : loc.pathname.startsWith("/templates") ? "templates" : "review";
+    : loc.pathname.startsWith("/templates") ? "templates"
+    : loc.pathname.startsWith("/review") ? "review" : "dashboard";
 
   return (
     <div style={{ fontFamily: F.body, color: C.ink, background: C.paper,
@@ -44,7 +45,8 @@ export default function Shell() {
       <aside style={{ background: C.panel, borderRight: `1px solid ${C.line}`,
         display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh" }}>
         <div style={{ padding: "22px 24px 18px", borderBottom: `1px solid ${C.line}` }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <div onClick={() => nav("/")} style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer" }}
+            title="Back to dashboard">
             <div style={{ width: 26, height: 26, borderRadius: 6, background: C.seal,
               display: "grid", placeItems: "center" }}>
               <ShieldCheck size={16} color="#fff" />
