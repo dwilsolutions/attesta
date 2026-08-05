@@ -377,3 +377,16 @@ export async function getPackageData(controlId = null, systemName = "Krome") {
   if (error) { console.error("package_data", error); return []; }
   return data || [];
 }
+
+/* ---- all controls in scope (for full-coverage drafting) ------------- */
+export async function getAllControlIds() {
+  if (!hasSupabase) return ["ac-2","ac-3"];
+  // controls that have at least one leaf objective (the assessable set)
+  const { data, error } = await supabase
+    .from("control_objective")
+    .select("control_id")
+    .eq("is_leaf", true);
+  if (error) { console.error("getAllControlIds", error); return []; }
+  const ids = [...new Set((data || []).map((r) => r.control_id))].sort();
+  return ids;
+}
