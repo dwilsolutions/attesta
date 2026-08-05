@@ -5,7 +5,7 @@ import { extractText, guessDocType } from "../lib/parse";
 import { splitIntoSections } from "../lib/splitDoc";
 import { inferFamily } from "../lib/inferFamily";
 import { supabase, hasSupabase } from "../lib/supabase";
-import { resolveAssessment, saveGoverningDoc } from "../lib/queries";
+import { resolveAssessment, saveGoverningDoc, tagSections } from "../lib/queries";
 import {
   PencilLine, UploadCloud, FileText, Check, Loader2, ChevronRight,
   Sparkles, AlertCircle, Cloud, HardDrive, X, ChevronDown, FileStack,
@@ -65,7 +65,10 @@ export default function Ingest() {
       if (!family) continue; // can't place it; leave for manual handling
       const sections = splitIntoSections(d.text);
       const title = d.name.replace(/\.[a-z0-9]+$/i, "").replace(/_/g, " ");
-      try { await saveGoverningDoc(family, d.docType, title, sections, sys.name); } catch (e) {}
+      try {
+        const docId = await saveGoverningDoc(family, d.docType, title, sections, sys.name);
+        if (docId) await tagSections(docId, family); // map each section to its controls
+      } catch (e) {}
     }
 
     // Remaining docs (SSP/other) feed narrative drafting. If the upload was
